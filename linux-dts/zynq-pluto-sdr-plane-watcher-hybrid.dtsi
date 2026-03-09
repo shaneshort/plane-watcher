@@ -1,0 +1,18 @@
+/delete-node/ &axi_tdd_0;
+
+&amba {
+	/delete-node/ iio_axi_tdd_0@0;
+};
+
+&{/fpga-axi@0} {
+	plane_watcher_axi: plane-watcher@43d00000 {
+		compatible = "generic-uio";
+		reg = <0x43d00000 0x1000>;
+	};
+};
+
+&adc0_ad9364 {
+	adi,digital-interface-tune-skip-mode = <1>;
+	adi,rx-synthesizer-frequency-hz = /bits/ 64 <1090000000>;
+	adi,rf-rx-bandwidth-hz = <2000000>;
+};

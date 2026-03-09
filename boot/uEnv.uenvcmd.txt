@@ -1,0 +1,1 @@
+uenvcmd=echo Loading FPGA bitstream ${bitstream_image} from SD...; load mmc 0 ${loadbit_addr} ${bitstream_image}; fpga load 0 ${loadbit_addr} ${filesize}

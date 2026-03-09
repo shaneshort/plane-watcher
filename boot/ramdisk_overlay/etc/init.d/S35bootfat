@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# Mount the SD boot FAT partition into /boot early so the running ramdisk image
+# can inspect and update boot artifacts without manual mount steps.
+#
+
+case "$1" in
+  start)
+    mkdir -p /boot
+    mountpoint -q /boot || mount -t vfat /dev/mmcblk0p1 /boot
+    ;;
+  stop)
+    ;;
+  restart|reload)
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+    ;;
+esac
+
+exit 0

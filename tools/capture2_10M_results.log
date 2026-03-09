@@ -1,0 +1,76 @@
+======================================================================
+FPGA Simulation vs dump1090 Reference Comparison
+======================================================================
+  Sim log:  /tmp/sim_10M_hybrid_good.log
+  Ref log:  /tmp/capture2_10M_ref.log
+
+  Sim total messages:     16  (unique: 16)
+  Ref total messages:     20  (unique: 20)
+
+  Matched:                15
+  Sim-only:                1
+  Ref-only (missed):       5
+    - Short (56-bit):      2
+    - Long (112-bit):      3
+
+  Match rate (of ref): 75.0%
+
+  Unique ICAO (sim):       8
+  Unique ICAO (ref):       8
+  ICAO matched:            7
+  ICAO ref-only:           1
+
+  DF Breakdown:
+    DF  Name                            Match  Missed  SimOnly
+  ----  ------------------------------  -----  ------  -------
+    11  All-Call Reply                      0       2        0
+    17  Extended Squitter (ADS-B)          12       3        1
+    18  Extended Squitter (TIS-B)           3       0        0
+
+======================================================================
+Sim-Only Message Validation (pyModeS)
+======================================================================
+
+  [CRC OK ]      82491.6 us  DF=17 8D7C6CA099449E9D688C12AD7F2F  ICAO=7C6CA0 TC=19 velocity
+
+  CRC valid:   1
+  CRC invalid: 0
+
+======================================================================
+Missed Message Positions (estimated from capture timeline)
+======================================================================
+
+  Missed DF17/18 messages with estimated sample positions:
+        Position     Sample#   DF  Message                       Details
+  --------------  ----------  ---  ----------------------------  -------
+      133746.9 us     2139950   17  8C7C2AC03B3852D51CD926C83CF7  ICAO=7C2AC0 TC=7 surface_pos
+      590794.3 us     9452709   17  8D7C7C9B990C2591B83005962563  ICAO=7C7C9B TC=19 velocity
+      610732.9 us     9771726   17  8D7C7C9BE10D240000000083FC76  ICAO=7C7C9B TC=28
+
+  Missed DF16/20/21 messages (need ICAO lookup table):
+        Position   DF  Message                       Details
+  --------------  ---  ----------------------------  -------
+
+======================================================================
+Test Vector Extraction Commands
+======================================================================
+
+  Extract regions around missed DF17 messages from the raw capture.
+  Each window is 500 us before to 500 us after the estimated position.
+  Samples are 4 bytes each (I16 + Q16 little-endian).
+
+  Window 0: 133247 - 134247 us (1 missed msg(s))
+    8C7C2AC03B3852D51CD926C83CF7
+  dd if=vectors/capture2.dat of=vectors/missed_region_0.dat bs=1 skip=8527800 count=64000
+  # 16000 samples, 64000 bytes
+
+  Window 1: 590294 - 591294 us (1 missed msg(s))
+    8D7C7C9B990C2591B83005962563
+  dd if=vectors/capture2.dat of=vectors/missed_region_1.dat bs=1 skip=37778836 count=64000
+  # 16000 samples, 64000 bytes
+
+  Window 2: 610233 - 611233 us (1 missed msg(s))
+    8D7C7C9BE10D240000000083FC76
+  dd if=vectors/capture2.dat of=vectors/missed_region_2.dat bs=1 skip=39054904 count=64000
+  # 16000 samples, 64000 bytes
+

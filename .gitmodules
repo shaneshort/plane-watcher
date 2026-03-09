@@ -1,0 +1,4 @@
+[submodule "firmware"]
+	path = firmware
+	url = https://github.com/shaneshort/planewatcher-firmware.git
+	branch = plane-feeder-integration

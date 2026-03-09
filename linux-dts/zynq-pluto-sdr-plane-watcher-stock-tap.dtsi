@@ -1,0 +1,51 @@
+/*
+ * plane_watcher stock-tap overlay — PPS and GPS UART additions for the
+ * stock-tap FPGA build flow on the Fishball (PlutoSDR-compatible) board.
+ *
+ * The stock Pluto BD already provides the AD936x, DMA, and IIO nodes.
+ * This fragment adds only the plane_watcher-specific extras:
+ *   - UIO node for the ADS-B decoder AXI register block
+ *   - pps-gpio node on EMIO GPIO[17] (Linux GPIO 71)
+ */
+
+&{/fpga-axi@0} {
+	plane_watcher_axi: plane-watcher@43d00000 {
+		compatible = "generic-uio";
+		reg = <0x43d00000 0x1000>;
+	};
+};
+
+/* The vendor DTSI includes a TDD controller (0x7C440000) and its
+ * companion IIO fake-device.  Neither exists in the stock-tap bitstream;
+ * probing the AXI address causes an imprecise external abort panic. */
+/delete-node/ &axi_tdd_0;
+
+&amba {
+	/delete-node/ iio_axi_tdd_0@0;
+};
+
+&adc0_ad9364 {
+	adi,digital-interface-tune-skip-mode = <1>;
+	adi,rx-synthesizer-frequency-hz = /bits/ 64 <1090000000>;
+	adi,rf-rx-bandwidth-hz = <2000000>;
+};
+
+/ {
+	/* Pin ttyPS numbering so UART1 (console) stays ttyPS0 even after
+	 * UART0 (GPS) is enabled. Without these aliases, UART0 at 0xe0000000
+	 * would claim ttyPS0 by address order and break the boot console. */
+	aliases {
+		serial0 = &uart1;  /* ttyPS0 = FTDI console (MIO 8..9)  */
+		serial1 = &uart0;  /* ttyPS1 = GPS F9P (EMIO via JP5 PL) */
+	};
+
+	pps {
+		compatible = "pps-gpio";
+		gpios = <&gpio0 71 0>;  /* EMIO GPIO[17] = MIO base 54 + 17, active high */
+		status = "okay";
+	};
+};
+
+&uart0 {
+	status = "okay";
+};

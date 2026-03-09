@@ -1,0 +1,69 @@
+# macOS
+.DS_Store
+
+# Local assistant scratch/output
+.superpowers/
+docs/superpowers/
+.codex
+CLAUDE.md
+
+# Vendor/build tool state
+.Xil/
+
+# GHDL simulation artifacts
+hdl/sim/vectors/
+hdl/sim/work/
+hdl/sim/waves/*.ghw
+hdl/sim/e~*.o
+hdl/sim/*_tb
+*.cf
+
+# Python
+__pycache__/
+.venv/
+tools/plane_watcher.env
+
+# IQ capture files (large)
+tools/*.raw
+captures/
+*.raw
+
+# Reference / third-party material (local only, not tracked)
+contrib/
+
+# Visualisation generation scripts (output SVGs are in docs/wiki/images/)
+visualizations/
+
+# Go build artifacts
+ps/bin/
+ps/bin-arm/
+ps/regdump
+ps/regpeek
+ps/plane-feeder
+ps/beast-client
+ps/beast-client-mac
+ps/*.csv
+
+# Local helper scripts
+capture.sh
+
+# GHDL root artifacts
+adsb_crc_tb
+*.o
+e~*.o
+
+# Vivado build output
+hdl/vivado/build/
+hdl/vivado/.Xil/
+hdl/vivado/*.log
+hdl/vivado/*.jou
+hdl/vivado/*.backup.log
+hdl/vivado/*.backup.jou
+
+# Device tree build output
+linux-dts/*.dtb
+
+# Build artifacts
+build/
+boot/uramdisk.image.gz.dist
+debug-boot.log

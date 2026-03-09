@@ -1,0 +1,9 @@
+[project]
+name = "tools"
+version = "0.1.0"
+description = "Utility scripts for simulation vectors, capture inspection, and board-side bring-up"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.4.3",
+    "pymodes>=2.21.1",
+]

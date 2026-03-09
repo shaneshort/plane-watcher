@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Board-specific DTS entrypoint for running the plane_watcher hybrid FPGA image
+ * on the vendor Pluto Rev.C Linux stack.
+ *
+ * Intended use:
+ * - place this file and zynq-pluto-sdr-plane-watcher-hybrid.dtsi into the
+ *   vendor kernel DTS directory
+ * - build a replacement DTB
+ * - deploy it as /boot/devicetree.dtb (or the equivalent boot FAT file)
+ *
+ * This keeps the vendor Rev.C board description but removes the stale vendor PL
+ * nodes that no longer exist in the custom bitstream.
+ */
+/dts-v1/;
+#include "zynq-pluto-sdr-revc.dts"
+#include "zynq-pluto-sdr-plane-watcher-hybrid.dtsi"
+
+&gpio0 {
+	/delete-node/ clock_extern_en;
+};
+
+/ {
+	model = "Analog Devices PlutoSDR Rev.C (Z7020/AD9363)";
+};

@@ -1,0 +1,26 @@
+# plane_watcher SD-boot override for Pluto-style vendor images.
+#
+# Purpose:
+# - load the custom FPGA image from the FAT boot partition in U-Boot
+# - do it before Linux boots, so ad9361 probes against the correct PL image
+#
+# Usage:
+# - append or merge this into the boot partition's existing uEnv.txt
+# - copy the custom boot-time FPGA image to the boot partition as:
+#     system.bit.bin
+#
+# Notes:
+# - This relies on the vendor U-Boot flow already importing `uEnv.txt` and
+#   running `uenvcmd` during `sdboot`.
+# - The stock vendor `uEnv.txt` defines:
+#     bitstream_image=system.bit.bin
+#     loadbit_addr=0x100000
+# - `system.bit.bin` should be the Bootgen-produced raw binary bitstream
+#   (for example: `zynq_adsb_vendor_wrapper.bit.bin`, renamed on the FAT
+#   partition to `system.bit.bin`).
+# - Keep this intentionally simple. The manual sequence that is known-good is:
+#     load mmc 0 ${loadbit_addr} ${bitstream_image}
+#     fpga load 0 ${loadbit_addr} ${filesize}
+#   so `uenvcmd` mirrors exactly that flow with no extra `test` logic.
+
+uenvcmd=echo Loading FPGA bitstream ${bitstream_image} from SD...; load mmc 0 ${loadbit_addr} ${bitstream_image}; fpga load 0 ${loadbit_addr} ${filesize}

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>plane-watcher</title>
+<style>
+  :root {
+    --bg:          #1a1a2e;
+    --bg-card:     #252540;
+    --bg-hover:    #2f2f50;
+    --text:        #e0e0e0;
+    --text-muted:  #8888aa;
+    --accent:      #fbbb24;
+    --accent-dim:  #c89a1e;
+    --green:       #4ade80;
+    --red:         #f44;
+    --border:      #333355;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); padding: 1rem 1.5rem;
+  }
+  h1 { color: var(--accent); font-size: 1.3rem; font-weight: 600; margin-bottom: 0.25rem; }
+  h2 { color: var(--accent); font-size: 0.95rem; font-weight: 600; margin: 1rem 0 0.4rem; }
+  .section-count { color: var(--green); font-weight: 400; margin-left: 0.4rem; }
+  .radio-bar {
+    font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;
+  }
+  .radio-bar span { color: var(--text); }
+
+  /* Stat cards */
+  .stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.4rem; margin-bottom: 0.4rem;
+  }
+  .stat {
+    background: var(--bg-card); padding: 0.5rem 0.6rem; border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+  .stat .label {
+    font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.04em; margin-bottom: 0.15rem;
+  }
+  .stat .value { font-size: 1.1rem; font-weight: 600; color: var(--text); }
+  .stat .value .unit { font-size: 0.7rem; font-weight: 400; color: var(--text-muted); }
+  .stat .value.good { color: var(--green); }
+  .stat .value.warn { color: var(--red); }
+
+  /* Aircraft table */
+  table { width: 100%; border-collapse: collapse; margin-top: 0.3rem; }
+  th {
+    background: var(--bg-card); color: var(--accent-dim); text-align: left;
+    padding: 0.4rem 0.6rem; font-size: 0.7rem; text-transform: uppercase;
+    letter-spacing: 0.03em; border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--border);
+    font-size: 0.8rem; font-variant-numeric: tabular-nums;
+  }
+  tr:hover { background: var(--bg-hover); }
+  .r { text-align: right; }
+
+  /* Advanced section */
+  .advanced { display: none; margin-top: 1rem; }
+  .advanced.show { display: block; }
+  .toggle {
+    background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted);
+    padding: 0.3rem 0.8rem; cursor: pointer; border-radius: 4px;
+    font-size: 0.7rem; margin-top: 0.75rem;
+  }
+  .toggle:hover { color: var(--accent); border-color: var(--accent); }
+  #error { color: var(--red); margin-bottom: 0.5rem; display: none; font-size: 0.85rem; }
+  .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+</style>
+</head>
+<body>
+<h1>plane-watcher</h1>
+<div id="error"></div>
+<div class="radio-bar" id="radio"></div>
+<div class="stats" id="stats"></div>
+<div class="stats" id="gps-stats"></div>
+<h2>Aircraft <span class="section-count" id="ac-count"></span></h2>
+<table>
+  <thead>
+    <tr>
+      <th>ICAO</th><th>Callsign</th><th>Squawk</th>
+      <th class="r">Altitude</th><th class="r">Dist</th>
+      <th class="r">Lat</th><th class="r">Lon</th>
+      <th class="r">Sig</th><th class="r">Msgs</th><th class="r">Age</th>
+    </tr>
+  </thead>
+  <tbody id="aircraft"></tbody>
+</table>
+<button class="toggle" onclick="toggleAdvanced()">Advanced</button>
+<div class="advanced" id="advanced">
+  <h2>FPGA Debug Counters</h2>
+  <table>
+    <thead><tr><th>Counter</th><th class="r">Value</th></tr></thead>
+    <tbody id="debug"></tbody>
+  </table>
+  <h2>Rejected Frames</h2>
+  <table>
+    <thead><tr><th>DF</th><th class="r">Count</th></tr></thead>
+    <tbody id="drop-summary"></tbody>
+  </table>
+  <table>
+    <thead><tr><th>Reason</th><th class="r">Count</th></tr></thead>
+    <tbody id="drop-reason-summary"></tbody>
+  </table>
+  <table>
+    <thead><tr><th>Seen</th><th>Reason</th><th>DF</th><th>Derived ICAO</th><th>Payload</th><th class="r">Signal</th></tr></thead>
+    <tbody id="drops"></tbody>
+  </table>
+  <h2>GPS Timing Detail</h2>
+  <table>
+    <thead><tr><th>Parameter</th><th class="r">Value</th></tr></thead>
+    <tbody id="gps-debug"></tbody>
+  </table>
+</div>
+<script>
+let showDebug = false;
+function toggleAdvanced() {
+  showDebug = !showDebug;
+  document.getElementById('advanced').classList.toggle('show', showDebug);
+  if (showDebug) {
+    fetchStats();
+    fetchDrops();
+  }
+}
+function fmt(n) { return n != null ? n.toLocaleString() : '-'; }
+function val(v, unit) { return unit ? `${v}<span class="unit">${unit}</span>` : v; }
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"]/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[ch]));
+}
+function age(seen) {
+  const s = Math.floor((Date.now() - new Date(seen).getTime()) / 1000);
+  return s < 0 ? '0s' : s + 's';
+}
+function uptime(secs) {
+  if (secs == null) return '-';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+async function fetchStats() {
+  try {
+    const url = showDebug ? '/api/stats?debug=1' : '/api/stats';
+    const r = await fetch(url);
+    const d = await r.json();
+    document.getElementById('error').style.display = 'none';
+    document.getElementById('stats').innerHTML = [
+      ['Messages', fmt(d.msg_count)],
+      ['Msg/s', val(d.msg_rate != null ? d.msg_rate.toFixed(1) : '-', '/s')],
+      ['Valid/s', val(d.crc_pass_rate != null ? d.crc_pass_rate.toFixed(1) : '-', '/s')],
+      ['Filter Drops', fmt(d.drop_count)],
+      ['Aircraft', fmt(d.aircraft_count)],
+      ['ICAOs', fmt(d.icao_count)],
+      ['Clients', fmt(d.client_count)],
+      ['Uptime', uptime(d.uptime_s)],
+      ['Overflow', d.overflow ? '<span class="value warn">YES</span>' : 'no'],
+    ].map(([l,v]) => `<div class="stat"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('');
+
+    const gpsEl = document.getElementById('gps-stats');
+    if (d.pps_count > 0) {
+      const ppm = d.oscillator_ppm != null ? d.oscillator_ppm.toFixed(1) : '-';
+      const syncClass = d.gps_sync ? 'good' : 'warn';
+      const syncText = d.gps_sync ? 'YES' : 'NO';
+      gpsEl.innerHTML = [
+        ['GPS Sync', `<span class="${syncClass}">${syncText}</span>`],
+        ['PPS Edges', fmt(d.pps_count)],
+        ['Oscillator', val(ppm, ' ppm')],
+        ['Skipped', fmt(d.skipped_edges)],
+      ].map(([l,v]) => `<div class="stat"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('');
+    } else {
+      gpsEl.innerHTML = '';
+    }
+
+    const radio = d.radio || {};
+    document.getElementById('radio').innerHTML =
+      `LO: <span>${radio.rx_lo ? (radio.rx_lo / 1e6).toFixed(0) + ' MHz' : '?'}</span> | ` +
+      `BW: <span>${radio.rx_bw ? (radio.rx_bw / 1e6).toFixed(1) + ' MHz' : '?'}</span> | ` +
+      `Mode: <span>${radio.gain_mode || '?'}</span> | ` +
+      `Gain: <span>${radio.gain_db || '?'}</span> | ` +
+      `RSSI: <span>${radio.rssi || '?'}</span> | ` +
+      `Tuned: <span style="color:${radio.tuned_ok ? 'var(--green)' : 'var(--red)'}">${radio.tuned_ok ? 'OK' : 'FAIL'}</span>`;
+
+    if (d.debug) {
+      document.getElementById('debug').innerHTML = Object.entries(d.debug)
+        .map(([k,v]) => `<tr><td>${k}</td><td class="r">${fmt(v)}</td></tr>`).join('');
+    }
+
+    // GPS timing detail in advanced section.
+    if (showDebug && d.pps_count > 0) {
+      document.getElementById('gps-debug').innerHTML = [
+        ['PPS Interval', fmt(d.pps_interval_ticks) + ' ticks'],
+        ['Carryover (current)', fmt(d.carryover) + ' ticks'],
+        ['Carryover (avg)', d.avg_carryover != null ? d.avg_carryover.toFixed(1) + ' ticks' : '-'],
+        ['Carryover (min)', fmt(d.carryover_min) + ' ticks'],
+        ['Carryover (max)', fmt(d.carryover_max) + ' ticks'],
+        ['Oscillator PPM', d.oscillator_ppm != null ? d.oscillator_ppm.toFixed(3) + ' ppm' : '-'],
+        ['Skipped Edges', fmt(d.skipped_edges)],
+      ].map(([k,v]) => `<tr><td>${k}</td><td class="r">${v}</td></tr>`).join('');
+    }
+  } catch(e) {
+    document.getElementById('error').style.display = 'block';
+    document.getElementById('error').textContent = 'Connection lost: ' + e.message;
+  }
+}
+async function fetchAircraft() {
+  try {
+    const r = await fetch('/api/aircraft');
+    const list = await r.json();
+    const tb = document.getElementById('aircraft');
+    const countEl = document.getElementById('ac-count');
+    if (!list || list.length === 0) {
+      tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted)">No aircraft</td></tr>';
+      countEl.textContent = '';
+      return;
+    }
+    countEl.textContent = list.length;
+    tb.innerHTML = list.map(a =>
+      `<tr>` +
+      `<td>${a.icao || ''}</td>` +
+      `<td>${a.callsign || ''}</td>` +
+      `<td>${a.squawk || ''}</td>` +
+      `<td class="r">${a.altitude ? fmt(a.altitude) + '<span class="unit">ft</span>' : ''}</td>` +
+      `<td class="r">${a.distance_km != null ? a.distance_km.toFixed(1) + '<span class="unit">km</span>' : ''}</td>` +
+      `<td class="r">${a.lat ? a.lat.toFixed(4) : ''}</td>` +
+      `<td class="r">${a.lon ? a.lon.toFixed(4) : ''}</td>` +
+      `<td class="r">${a.signal}</td>` +
+      `<td class="r">${fmt(a.messages)}</td>` +
+      `<td class="r">${age(a.seen)}</td>` +
+      `</tr>`
+    ).join('');
+  } catch(e) { /* handled by stats fetch */ }
+}
+async function fetchDrops() {
+  if (!showDebug) return;
+  try {
+    const r = await fetch('/api/drops');
+    const d = await r.json();
+    const summary = Object.entries(d.by_df || {}).sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0]);
+    });
+    document.getElementById('drop-summary').innerHTML = summary.length
+      ? summary.map(([df, count]) => `<tr><td>${esc(df)}</td><td class="r">${fmt(count)}</td></tr>`).join('')
+      : '<tr><td colspan="2" style="text-align:center;color:var(--text-muted)">No rejected frames captured</td></tr>';
+    const reasons = Object.entries(d.by_reason || {}).sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0]);
+    });
+    document.getElementById('drop-reason-summary').innerHTML = reasons.length
+      ? reasons.map(([reason, count]) => `<tr><td>${esc(reason)}</td><td class="r">${fmt(count)}</td></tr>`).join('')
+      : '<tr><td colspan="2" style="text-align:center;color:var(--text-muted)">No rejection data</td></tr>';
+    const recent = d.recent || [];
+    document.getElementById('drops').innerHTML = recent.length
+      ? recent.map(item =>
+        `<tr>` +
+        `<td>${age(item.recorded_at)}</td>` +
+        `<td>${esc(item.reason)}</td>` +
+        `<td>${esc(item.df)}</td>` +
+        `<td class="mono">${esc(item.derived_icao || '')}</td>` +
+        `<td class="mono">${esc(item.payload || '')}</td>` +
+        `<td class="r">${fmt(item.signal)}</td>` +
+        `</tr>`
+      ).join('')
+      : '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No rejected frames captured</td></tr>';
+  } catch(e) { /* handled by stats fetch */ }
+}
+setInterval(() => { fetchStats(); fetchAircraft(); fetchDrops(); }, 2000);
+fetchStats(); fetchAircraft();
+</script>
+</body>
+</html>
