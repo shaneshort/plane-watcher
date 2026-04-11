@@ -70,3 +70,4 @@ TODO.md
 build/
 boot/uramdisk.image.gz.dist
 debug-boot.log
+.serena
