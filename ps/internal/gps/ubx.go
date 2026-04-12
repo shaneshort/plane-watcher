@@ -37,6 +37,8 @@ const (
 	IDCfgTMODE3 = 0x71 // CFG-TMODE3 (F9 generation)
 	IDMonHW     = 0x09 // MON-HW (hardware status, antenna)
 	IDMonVER    = 0x04 // MON-VER
+	IDNavClock  = 0x22 // NAV-CLOCK (clock solution: bias/drift/tAcc/fAcc)
+	IDNavDOP    = 0x04 // NAV-DOP (dilution of precision)
 	IDNavSVIN   = 0x3B // NAV-SVIN (F9)
 	IDTimSVIN   = 0x04 // TIM-SVIN (M8)
 )

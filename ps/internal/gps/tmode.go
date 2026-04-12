@@ -152,6 +152,47 @@ func FixedModeFrameFromSVIN(gen Generation, st SVINStatus) (Frame, error) {
 	}
 }
 
+// ExtractFixedModeECEF pulls the fixed-mode ECEF coordinates out of a
+// CFG-TMODE2 or CFG-TMODE3 payload. Only meaningful when the payload's
+// mode field is 2 (fixed); returns ok=false for truncated payloads.
+// Coordinates are in cm. Used by the gpsmon collector so the dashboard
+// can show where the receiver is locked to — TIM-SVIN returns zeros in
+// fixed mode because it only describes survey-in progress.
+//
+// For TMODE3 (F9), the sub-cm high-precision parts are also returned.
+// For TMODE2 (M8) those outputs are always zero.
+// fixedPosAccMM is returned in millimetres regardless of the receiver
+// generation (TMODE2 is already mm; TMODE3 is 0.1 mm and gets converted).
+func ExtractFixedModeECEF(gen Generation, payload []byte) (xCm, yCm, zCm int32, xHP, yHP, zHP int8, fixedPosAccMM uint32, ok bool) {
+	switch gen {
+	case GenM8:
+		// CFG-TMODE2: ecefX@4, ecefY@8, ecefZ@12 (i4 cm),
+		//             fixedPosAcc@16 (u4 mm)
+		if len(payload) < 20 {
+			return 0, 0, 0, 0, 0, 0, 0, false
+		}
+		return int32(binary.LittleEndian.Uint32(payload[4:8])),
+			int32(binary.LittleEndian.Uint32(payload[8:12])),
+			int32(binary.LittleEndian.Uint32(payload[12:16])),
+			0, 0, 0,
+			binary.LittleEndian.Uint32(payload[16:20]),
+			true
+	case GenF9:
+		// CFG-TMODE3: ecefX@4, ecefY@8, ecefZ@12 (i4 cm),
+		//             HP parts@16-18 (i1 0.1mm), fixedPosAcc@20 (u4 0.1mm)
+		if len(payload) < 24 {
+			return 0, 0, 0, 0, 0, 0, 0, false
+		}
+		return int32(binary.LittleEndian.Uint32(payload[4:8])),
+			int32(binary.LittleEndian.Uint32(payload[8:12])),
+			int32(binary.LittleEndian.Uint32(payload[12:16])),
+			int8(payload[16]), int8(payload[17]), int8(payload[18]),
+			binary.LittleEndian.Uint32(payload[20:24]) / 10, // 0.1 mm → mm
+			true
+	}
+	return 0, 0, 0, 0, 0, 0, 0, false
+}
+
 // TMODEMode extracts the timeMode/flags.mode field from a CFG-TMODE2 or
 // CFG-TMODE3 payload. Returns 0=disabled, 1=survey-in, 2=fixed, or -1
 // on a malformed payload. Used by status and the "already in fixed mode?"

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/plane-watcher/plane-feeder/internal/diag"
+	"github.com/plane-watcher/plane-feeder/internal/gpsmon"
 	"github.com/plane-watcher/plane-feeder/internal/radio"
 	"github.com/plane-watcher/plane-feeder/internal/tracker"
 )
@@ -74,12 +75,23 @@ type RejectedFrameProvider interface {
 	Snapshot(limit int) diag.RejectedFrameSummary
 }
 
+// GPSProvider is the interface the GPS dashboard uses to read the
+// latest GNSS+PPS snapshot published by the gpsmon.Collector. It
+// intentionally returns a typed *gpsmon.Snapshot rather than anything
+// more generic — the web server and gpsmon evolve together, and the
+// extra indirection would only buy us flexibility we don't need.
+type GPSProvider interface {
+	Snapshot() *gpsmon.Snapshot
+	History() []gpsmon.Sample
+}
+
 type Server struct {
 	tracker  *tracker.Tracker
 	stats    StatsProvider
 	radio    RadioController
 	detector DetectorConfig
 	rejected RejectedFrameProvider
+	gps      GPSProvider
 	listener net.Listener
 }
 
@@ -96,8 +108,26 @@ type aircraftResponse struct {
 	Messages uint64   `json:"messages"`
 }
 
-func New(t *tracker.Tracker, sp StatsProvider, rc RadioController, dc DetectorConfig, rp RejectedFrameProvider) *Server {
-	return &Server{tracker: t, stats: sp, radio: rc, detector: dc, rejected: rp}
+// New constructs a Server. Any provider may be nil; handlers that depend
+// on a nil provider return 503. The GPS provider is the latest addition:
+// when nil, /api/gps and /gps both still route but respond with a
+// "GPS monitor not available" payload instead of 404.
+func New(
+	t *tracker.Tracker,
+	sp StatsProvider,
+	rc RadioController,
+	dc DetectorConfig,
+	rp RejectedFrameProvider,
+	gp GPSProvider,
+) *Server {
+	return &Server{
+		tracker:  t,
+		stats:    sp,
+		radio:    rc,
+		detector: dc,
+		rejected: rp,
+		gps:      gp,
+	}
 }
 
 func (s *Server) handler() http.Handler {
@@ -105,12 +135,20 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	mux.HandleFunc("GET /api/aircraft", s.handleAircraft)
 	mux.HandleFunc("GET /api/drops", s.handleDrops)
+	mux.HandleFunc("GET /api/gps", s.handleGNSS)
+	mux.HandleFunc("GET /api/gps/history", s.handleGNSSHistory)
 	mux.HandleFunc("POST /api/radio/gain-mode", s.handleSetGainMode)
 	mux.HandleFunc("POST /api/radio/gain", s.handleSetGain)
 	mux.HandleFunc("POST /api/detector/quiet-score-shift", s.handleSetQuietScoreShift)
 	mux.HandleFunc("POST /api/detector/snr-ratio-shift", s.handleSetSnrRatioShift)
 	mux.HandleFunc("POST /api/detector/holdoff", s.handleSetHoldoff)
 	staticSub, _ := fs.Sub(staticFiles, "static")
+	// Explicit /gps route so the nav bar can use a clean URL. The
+	// static file server also serves /gps.html directly; this route
+	// makes /gps and /gps.html both work.
+	mux.HandleFunc("GET /gps", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, staticSub, "gps.html")
+	})
 	mux.Handle("GET /", http.FileServerFS(staticSub))
 	return mux
 }
@@ -175,6 +213,54 @@ func (s *Server) handleAircraft(w http.ResponseWriter, r *http.Request) {
 	})
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(list)
+}
+
+// handleGNSS returns a merged GPS + PPS snapshot. The GPS side comes
+// from the gpsmon.Collector (long-lived gpsd + UBX poll loop), the PPS
+// side is lifted from the existing StatsProvider (which is what the
+// dashboard already uses).
+func (s *Server) handleGNSS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	resp := map[string]any{
+		"ts": time.Now().UTC().Format(time.RFC3339),
+	}
+	if s.gps != nil {
+		resp["gps"] = s.gps.Snapshot()
+	} else {
+		resp["gps"] = nil
+		resp["gps_error"] = "gps monitor not configured"
+	}
+	if s.stats != nil {
+		st := s.stats.Stats(false)
+		resp["pps"] = map[string]any{
+			"gps_sync":           st.GpsSync,
+			"oscillator_ppm":     st.OscillatorPPM,
+			"carryover":          st.Carryover,
+			"avg_carryover":      st.AvgCarryover,
+			"carryover_min":      st.CarryoverMin,
+			"carryover_max":      st.CarryoverMax,
+			"pps_interval_ticks": st.PpsTickRate,
+			"skipped_edges":      st.SkippedEdges,
+			"pps_count":          st.PPSCount,
+		}
+	}
+	json.NewEncoder(w).Encode(resp)
+}
+
+// handleGNSSHistory returns the rolling time-series samples maintained
+// by gpsmon.Collector. Used by the GPS dashboard to render the PPS-ppm
+// and used-sats charts.
+func (s *Server) handleGNSSHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	resp := map[string]any{
+		"ts": time.Now().UTC().Format(time.RFC3339),
+	}
+	if s.gps != nil {
+		resp["samples"] = s.gps.History()
+	} else {
+		resp["samples"] = []gpsmon.Sample{}
+	}
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleDrops(w http.ResponseWriter, r *http.Request) {

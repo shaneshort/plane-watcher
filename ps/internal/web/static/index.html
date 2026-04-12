@@ -30,6 +30,18 @@
     border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;
   }
   .radio-bar span { color: var(--text); }
+  .page-nav {
+    font-size: 0.8rem; color: var(--text-muted); margin: 0.1rem 0 0.6rem;
+    border-bottom: 1px solid var(--border); padding-bottom: 0.4rem;
+  }
+  .page-nav a {
+    color: var(--text-muted); text-decoration: none; margin-right: 1rem;
+    padding-bottom: 0.2rem;
+  }
+  .page-nav a:hover { color: var(--accent); }
+  .page-nav a.active {
+    color: var(--accent); border-bottom: 2px solid var(--accent); padding-bottom: 0.3rem;
+  }
 
   /* Stat cards */
   .stats {
@@ -78,6 +90,10 @@
 </head>
 <body>
 <h1>plane-watcher</h1>
+<nav class="page-nav">
+  <a href="/" class="active">Dashboard</a>
+  <a href="/gps">GPS</a>
+</nav>
 <div id="error"></div>
 <div class="radio-bar" id="radio"></div>
 <div class="stats" id="stats"></div>

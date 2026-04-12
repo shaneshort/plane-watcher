@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>plane-watcher — GPS</title>
+<style>
+  :root {
+    --bg:          #1a1a2e;
+    --bg-card:     #252540;
+    --bg-hover:    #2f2f50;
+    --text:        #e0e0e0;
+    --text-muted:  #8888aa;
+    --accent:      #fbbb24;
+    --accent-dim:  #c89a1e;
+    --green:       #4ade80;
+    --red:         #f44;
+    --amber:       #facc15;
+    --border:      #333355;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); padding: 1rem 1.5rem;
+    font-size: 15px;
+  }
+  h1 { color: var(--accent); font-size: 1.5rem; font-weight: 600; margin-bottom: 0.25rem; }
+  h2 {
+    color: var(--accent); font-size: 1.05rem; font-weight: 600;
+    margin: 0 0 0.6rem; display: flex; justify-content: space-between; align-items: baseline;
+  }
+  h2 .age { color: var(--text-muted); font-weight: 400; font-size: 0.8rem; }
+  nav {
+    font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.85rem;
+    border-bottom: 1px solid var(--border); padding-bottom: 0.55rem;
+  }
+  nav a {
+    color: var(--text-muted); text-decoration: none; margin-right: 1rem;
+    padding-bottom: 0.2rem;
+  }
+  nav a:hover { color: var(--accent); }
+  nav a.active {
+    color: var(--accent); border-bottom: 2px solid var(--accent); padding-bottom: 0.3rem;
+  }
+
+  .cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 0.7rem; margin-bottom: 0.7rem;
+  }
+  .card {
+    background: var(--bg-card); padding: 0.85rem 1rem; border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+  .kv { display: grid; grid-template-columns: minmax(8rem, auto) 1fr; gap: 0.25rem 0.9rem; }
+  .kv .k {
+    color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase;
+    letter-spacing: 0.03em; align-self: center;
+  }
+  .kv .v {
+    color: var(--text); font-size: 0.95rem; font-variant-numeric: tabular-nums;
+    word-break: break-all;
+  }
+  .v.good  { color: var(--green); }
+  .v.warn  { color: var(--amber); }
+  .v.bad   { color: var(--red); }
+  .v.muted { color: var(--text-muted); }
+  /* section break inside a card — thin divider + small top margin */
+  .kv .k.sep, .kv .v.sep {
+    margin-top: 0.55rem; padding-top: 0.45rem;
+    border-top: 1px solid var(--border);
+    color: var(--accent-dim); text-transform: uppercase;
+    font-size: 0.72rem; letter-spacing: 0.08em;
+  }
+  .kv .v.sep { color: var(--text-muted); }
+  .err {
+    color: var(--red); font-size: 0.75rem; margin-top: 0.4rem;
+    border-top: 1px solid var(--border); padding-top: 0.35rem;
+  }
+  .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+
+  /* Satellite table */
+  .sattable { width: 100%; border-collapse: collapse; margin-top: 0.35rem; }
+  .sattable th {
+    background: var(--bg-card); color: var(--accent-dim); text-align: left;
+    padding: 0.35rem 0.55rem; font-size: 0.75rem; text-transform: uppercase;
+    letter-spacing: 0.03em; border-bottom: 1px solid var(--border);
+  }
+  .sattable td {
+    padding: 0.3rem 0.55rem; border-bottom: 1px solid var(--border);
+    font-size: 0.85rem; font-variant-numeric: tabular-nums;
+  }
+  .sattable tr.unused td { color: var(--text-muted); }
+  .sattable .r { text-align: right; }
+  .snr-bar {
+    display: inline-block; width: 2.4rem; height: 0.55rem; background: var(--border);
+    border-radius: 2px; vertical-align: middle; margin-right: 0.4rem; position: relative;
+  }
+  .snr-bar > div { height: 100%; background: var(--green); border-radius: 2px; }
+  .snr-bar.warn > div { background: var(--amber); }
+  .snr-bar.bad > div { background: var(--red); }
+
+  /* Hide toggles */
+  .toggles {
+    font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;
+  }
+  .toggles label { margin-right: 1rem; cursor: pointer; }
+  .toggles input { vertical-align: middle; }
+
+  /* Rolling time-series charts */
+  .charts {
+    display: grid; grid-template-columns: 1fr; gap: 0.7rem; margin-bottom: 0.7rem;
+  }
+  .chart-card {
+    background: var(--bg-card); padding: 0.85rem 1rem; border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+  .chart-card h2 {
+    margin: 0 0 0.5rem;
+  }
+  .chart-card canvas {
+    display: block; width: 100%; height: 160px;
+  }
+
+  #error { color: var(--red); margin-bottom: 0.5rem; display: none; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<h1>plane-watcher — GPS</h1>
+<nav>
+  <a href="/">Dashboard</a>
+  <a href="/gps" class="active">GPS</a>
+</nav>
+<div id="error"></div>
+
+<div class="toggles">
+  <label><input type="checkbox" id="hide-antenna"> Hide antenna status (for splitters with DC block)</label>
+</div>
+
+<div class="cards">
+  <div class="card" id="card-receiver">
+    <h2>Receiver <span class="age" id="age-receiver"></span></h2>
+    <div class="kv" id="kv-receiver"></div>
+    <div class="err" id="err-receiver" style="display:none"></div>
+  </div>
+
+  <div class="card" id="card-location">
+    <h2>Location <span class="age" id="age-location"></span></h2>
+    <div class="kv" id="kv-location"></div>
+  </div>
+
+  <div class="card" id="card-clock">
+    <h2>Clock &amp; Timing <span class="age" id="age-clock"></span></h2>
+    <div class="kv" id="kv-clock"></div>
+    <div class="err" id="err-periodic" style="display:none"></div>
+  </div>
+
+  <div class="card" id="card-pps">
+    <h2>PPS Health</h2>
+    <div class="kv" id="kv-pps"></div>
+  </div>
+
+  <div class="card" id="card-sats">
+    <h2>Satellites <span class="age" id="age-sats"></span></h2>
+    <div id="sats-summary" class="kv" style="margin-bottom:0.4rem"></div>
+    <table class="sattable" id="sats-table">
+      <thead>
+        <tr>
+          <th>PRN</th>
+          <th>GNSS</th>
+          <th class="r">Az°</th>
+          <th class="r">El°</th>
+          <th>SNR</th>
+          <th>Used</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="charts">
+  <div class="chart-card">
+    <h2>Oscillator PPM <span class="age" id="age-chart-ppm"></span></h2>
+    <canvas id="chart-ppm"></canvas>
+  </div>
+  <div class="chart-card">
+    <h2>Used Satellites <span class="age" id="age-chart-sats"></span></h2>
+    <canvas id="chart-sats"></canvas>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const gnssName = (id) => ({0:"GPS",1:"SBAS",2:"GAL",3:"BDS",4:"IMES",5:"QZSS",6:"GLO"}[id] || "?");
+
+function setKV(containerId, rows) {
+  const el = $(containerId);
+  el.innerHTML = "";
+  for (const row of rows) {
+    // "section" marker: {section: "label"} renders as a divider row.
+    if (row && row.section !== undefined) {
+      const kd = document.createElement("div"); kd.className = "k sep"; kd.textContent = row.section;
+      const vd = document.createElement("div"); vd.className = "v sep"; vd.textContent = row.value || "";
+      el.appendChild(kd); el.appendChild(vd);
+      continue;
+    }
+    const [k, v, cls] = row;
+    const kd = document.createElement("div"); kd.className = "k"; kd.textContent = k;
+    const vd = document.createElement("div"); vd.className = "v" + (cls ? " " + cls : ""); vd.textContent = v;
+    el.appendChild(kd); el.appendChild(vd);
+  }
+}
+
+function ageString(iso) {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (isNaN(t)) return "";
+  const s = Math.round((Date.now() - t) / 1000);
+  if (s < 0) return "";
+  if (s < 60) return s + "s ago";
+  return Math.round(s / 60) + "m ago";
+}
+
+function tmodeName(n) {
+  return {0:"disabled",1:"survey-in",2:"fixed"}[n] || ("unknown (" + n + ")");
+}
+
+function dynModelName(n) {
+  return {0:"portable",2:"stationary",3:"pedestrian",4:"automotive",5:"sea",6:"airborne<1g"}[n] || ("unknown ("+n+")");
+}
+
+function antStatusName(n) {
+  return {0:"init",1:"unknown",2:"ok",3:"SHORT",4:"OPEN"}[n] || ("unknown ("+n+")");
+}
+
+function antPowerName(n) {
+  return {0:"off",1:"on",2:"unknown"}[n] || ("unknown ("+n+")");
+}
+
+function jamStateName(n) {
+  return {0:"unknown",1:"ok",2:"warning",3:"critical"}[n] || ("unknown ("+n+")");
+}
+
+function fixModeName(n) {
+  return {0:"none",1:"no-fix",2:"2D",3:"3D",4:"time-only"}[n] || ("unknown ("+n+")");
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("/api/gps");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    $("error").style.display = "none";
+    render(data);
+  } catch (e) {
+    $("error").textContent = "fetch error: " + e.message;
+    $("error").style.display = "block";
+  }
+}
+
+function render(data) {
+  const gps = data.gps || {};
+  const pps = data.pps || {};
+  const hideAntenna = $("hide-antenna").checked;
+
+  // Transport error short-circuit.
+  if (gps.TransportErr) {
+    $("error").textContent = "gpsd transport: " + gps.TransportErr;
+    $("error").style.display = "block";
+  }
+
+  // Receiver card
+  const r = gps.Receiver || {};
+  const hw = gps.HW || {};
+  const recRows = [
+    ["generation", r.Generation || "—"],
+    ["sw",         r.SwVersion || "—"],
+    ["hw",         r.HwVersion || "—"],
+    ["time mode",  tmodeName(r.TMODEMode)],
+    ["dyn model",  dynModelName(r.NAV5 && r.NAV5.DynModel)],
+  ];
+  if (!hideAntenna) {
+    let antCls = "";
+    if (hw.AntennaStatus === 2) antCls = "good";
+    else if (hw.AntennaStatus === 3 || hw.AntennaStatus === 4) antCls = "warn";
+    recRows.push(["antenna", antStatusName(hw.AntennaStatus), antCls]);
+    recRows.push(["ant. power", antPowerName(hw.AntennaPower)]);
+  }
+  let jamCls = "";
+  if (hw.JammingState === 2) jamCls = "warn";
+  else if (hw.JammingState === 3) jamCls = "bad";
+  else if (hw.JammingState === 1) jamCls = "good";
+  recRows.push(["jamming", jamStateName(hw.JammingState), jamCls]);
+  recRows.push(["CW suppress", (hw.CWSuppression !== undefined ? hw.CWSuppression : "—") + " / 255"]);
+  recRows.push(["AGC", (hw.AGCCnt !== undefined ? hw.AGCCnt : "—") + " / 8191"]);
+  recRows.push(["noise", (hw.NoisePerMS !== undefined ? hw.NoisePerMS : "—")]);
+  setKV("kv-receiver", recRows);
+  $("age-receiver").textContent = ageString(gps.ReceiverAt);
+  if (gps.ReceiverErr) {
+    $("err-receiver").textContent = gps.ReceiverErr;
+    $("err-receiver").style.display = "block";
+  } else {
+    $("err-receiver").style.display = "none";
+  }
+
+  // Location card — merged live fix + survey/fixed-position state.
+  const f = gps.Fix || {};
+  const s = gps.Survey || {};
+  const locationRows = [
+    ["mode",   fixModeName(f.mode), f.mode >= 3 ? "good" : (f.mode >= 2 ? "warn" : "bad")],
+    ["time",   f.time || "—"],
+    ["lat",    f.lat !== undefined ? f.lat.toFixed(7) + "°" : "—"],
+    ["lon",    f.lon !== undefined ? f.lon.toFixed(7) + "°" : "—"],
+    ["alt MSL", (f.altMSL !== undefined ? f.altMSL.toFixed(2) : "—") + " m"],
+    ["alt HAE", (f.altHAE !== undefined ? f.altHAE.toFixed(2) : "—") + " m"],
+    ["eph",    (f.eph !== undefined ? f.eph.toFixed(2) : "—") + " m"],
+    ["epv",    (f.epv !== undefined ? f.epv.toFixed(2) : "—") + " m"],
+    ["leap",   f.leapseconds !== undefined ? f.leapseconds + " s" : "—"],
+  ];
+  if (r.TMODEMode === 2) {
+    locationRows.push({section: "timing mode", value: "FIXED"});
+    locationRows.push(["ECEF X", (s.MeanXCm !== undefined ? (s.MeanXCm/100).toFixed(2) + " m" : "—")]);
+    locationRows.push(["ECEF Y", (s.MeanYCm !== undefined ? (s.MeanYCm/100).toFixed(2) + " m" : "—")]);
+    locationRows.push(["ECEF Z", (s.MeanZCm !== undefined ? (s.MeanZCm/100).toFixed(2) + " m" : "—")]);
+    locationRows.push(["surveyed acc", (s.MeanAccMeters !== undefined ? s.MeanAccMeters.toFixed(3) : "—") + " m"]);
+  } else if (r.TMODEMode === 1) {
+    locationRows.push({section: "timing mode", value: "SURVEY-IN"});
+    locationRows.push(["active", s.Active ? "yes" : "no"]);
+    locationRows.push(["valid",  s.Valid  ? "yes" : "no"]);
+    locationRows.push(["duration", (s.DurationSec !== undefined ? s.DurationSec : "—") + " s"]);
+    locationRows.push(["obs", s.Observations !== undefined ? s.Observations : "—"]);
+    locationRows.push(["meanAcc", (s.MeanAccMeters !== undefined ? s.MeanAccMeters.toFixed(3) : "—") + " m"]);
+  } else {
+    locationRows.push({section: "timing mode", value: "disabled"});
+  }
+  setKV("kv-location", locationRows);
+  $("age-location").textContent = ageString(gps.FixAt);
+
+  // Clock & Timing card
+  const c = gps.Clock || {};
+  const d = gps.DOP || {};
+  const clkRows = [
+    ["clk bias",    (c.ClockBiasNs !== undefined ? c.ClockBiasNs : "—") + " ns"],
+    ["clk drift",   (c.ClockDriftNsPerS !== undefined ? c.ClockDriftNsPerS : "—") + " ns/s"],
+    ["time acc",    (c.TimeAccuracyNs !== undefined ? c.TimeAccuracyNs : "—") + " ns"],
+    ["freq acc",    (c.FreqAccuracyPsPerS !== undefined ? c.FreqAccuracyPsPerS : "—") + " ps/s"],
+    ["pDOP",        d.PDOP !== undefined ? d.PDOP.toFixed(2) : "—"],
+    ["tDOP",        d.TDOP !== undefined ? d.TDOP.toFixed(2) : "—"],
+    ["hDOP",        d.HDOP !== undefined ? d.HDOP.toFixed(2) : "—"],
+    ["vDOP",        d.VDOP !== undefined ? d.VDOP.toFixed(2) : "—"],
+  ];
+  setKV("kv-clock", clkRows);
+  $("age-clock").textContent = ageString(gps.PeriodicAt);
+  if (gps.PeriodicErr) {
+    $("err-periodic").textContent = gps.PeriodicErr;
+    $("err-periodic").style.display = "block";
+  } else {
+    $("err-periodic").style.display = "none";
+  }
+
+  // PPS card
+  const ppsRows = [
+    ["gps sync",        pps.gps_sync ? "yes" : "no", pps.gps_sync ? "good" : "bad"],
+    ["oscillator ppm",  pps.oscillator_ppm !== undefined ? pps.oscillator_ppm.toFixed(3) : "—"],
+    ["carryover",       pps.carryover !== undefined ? pps.carryover : "—"],
+    ["avg carryover",   pps.avg_carryover !== undefined ? pps.avg_carryover.toFixed(2) : "—"],
+    ["min carryover",   pps.carryover_min !== undefined ? pps.carryover_min : "—"],
+    ["max carryover",   pps.carryover_max !== undefined ? pps.carryover_max : "—"],
+    ["tick interval",   pps.pps_interval_ticks !== undefined ? pps.pps_interval_ticks : "—"],
+    ["skipped edges",   pps.skipped_edges !== undefined ? pps.skipped_edges : "—", pps.skipped_edges ? "warn" : ""],
+    ["PPS count",       pps.pps_count !== undefined ? pps.pps_count : "—"],
+  ];
+  // TP5 summary
+  const tp5 = r.TP5 || {};
+  if (tp5.FreqPeriod) {
+    const freq = tp5.IsFreq ? tp5.FreqPeriod + " Hz" : tp5.FreqPeriod + " µs period";
+    const pulse = tp5.IsLength ? tp5.PulseLenRatio + " µs" : "duty " + tp5.PulseLenRatio;
+    ppsRows.push(["TP5 freq",   freq]);
+    ppsRows.push(["TP5 pulse",  pulse]);
+    ppsRows.push(["TP5 grid",   tp5.GridUTC ? "UTC" : "GPS"]);
+    ppsRows.push(["TP5 edge",   tp5.RisingAtTop ? "rising@top" : "falling@top"]);
+  }
+  setKV("kv-pps", ppsRows);
+
+  // Satellites
+  const sky = gps.SkyDOP || {};
+  const sats = gps.Sats || [];
+  const sumRows = [
+    ["tracked", sky.nSat !== undefined ? sky.nSat : sats.length],
+    ["used",    sky.uSat !== undefined ? sky.uSat : sats.filter(s => s.used).length],
+    ["gDOP",    sky.gdop !== undefined ? sky.gdop.toFixed(2) : "—"],
+    ["hDOP",    sky.hdop !== undefined ? sky.hdop.toFixed(2) : "—"],
+  ];
+  setKV("sats-summary", sumRows);
+
+  const tbody = document.querySelector("#sats-table tbody");
+  tbody.innerHTML = "";
+  const sorted = sats.slice().sort((a,b) => (b.ss||0) - (a.ss||0));
+  for (const sat of sorted) {
+    const tr = document.createElement("tr");
+    if (!sat.used) tr.classList.add("unused");
+    const snr = sat.ss || 0;
+    const snrPct = Math.max(0, Math.min(100, snr * 100 / 50));
+    let snrCls = "";
+    if (snr < 20) snrCls = "bad";
+    else if (snr < 35) snrCls = "warn";
+    tr.innerHTML =
+      "<td>" + (sat.PRN || "") + "</td>" +
+      "<td>" + gnssName(sat.gnssid) + "</td>" +
+      "<td class=\"r\">" + (sat.az !== undefined ? Math.round(sat.az) : "") + "</td>" +
+      "<td class=\"r\">" + (sat.el !== undefined ? Math.round(sat.el) : "") + "</td>" +
+      "<td><span class=\"snr-bar " + snrCls + "\"><div style=\"width:" + snrPct + "%\"></div></span>" +
+        (snr ? snr.toFixed(0) : "—") + "</td>" +
+      "<td>" + (sat.used ? "✓" : "—") + "</td>";
+    tbody.appendChild(tr);
+  }
+  $("age-sats").textContent = ageString(gps.SatsAt);
+}
+
+// drawLineChart renders a time-series onto a canvas. Vanilla Canvas —
+// no library. Call pattern:
+//   drawLineChart(canvas, samples, "oscillator_ppm", {color, unit})
+// samples must be sorted by ts_ms ascending. The Y axis auto-scales
+// from the visible data with a 10% padding on each side; the X axis
+// covers the fixed 60-minute window [now - 3600s .. now] so the right
+// edge always represents "now" regardless of how much history is
+// currently stored.
+function drawLineChart(canvas, samples, field, opts) {
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth;
+  const cssH = canvas.clientHeight;
+  if (cssW === 0 || cssH === 0) return;
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const padL = 44, padR = 8, padT = 8, padB = 18;
+  const plotW = cssW - padL - padR;
+  const plotH = cssH - padT - padB;
+
+  // X axis: fixed 60 min window ending at now.
+  const nowMs = Date.now();
+  const windowMs = 60 * 60 * 1000;
+  const tMin = nowMs - windowMs;
+  const tMax = nowMs;
+
+  // Y axis: auto-scale from visible data.
+  let yMin = Infinity, yMax = -Infinity;
+  const visible = samples.filter(s => s.ts_ms >= tMin);
+  for (const s of visible) {
+    const v = s[field];
+    if (v < yMin) yMin = v;
+    if (v > yMax) yMax = v;
+  }
+  if (!isFinite(yMin) || !isFinite(yMax)) {
+    yMin = 0; yMax = 1;
+  }
+  if (yMin === yMax) {
+    // Flat line — pad so it doesn't collapse into a sliver.
+    yMin -= 1; yMax += 1;
+  } else {
+    const pad = (yMax - yMin) * 0.1;
+    yMin -= pad; yMax += pad;
+  }
+
+  // Background grid (horizontal) and Y axis labels.
+  ctx.strokeStyle = "#333355";
+  ctx.fillStyle = "#8888aa";
+  ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  const nTicks = 4;
+  for (let i = 0; i <= nTicks; i++) {
+    const y = padT + (plotH * i / nTicks);
+    const v = yMax - (yMax - yMin) * (i / nTicks);
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(padL + plotW, y);
+    ctx.strokeStyle = i === 0 || i === nTicks ? "#3a3a5c" : "#2a2a45";
+    ctx.stroke();
+    ctx.fillText(v.toFixed(1), padL - 4, y);
+  }
+
+  // X axis labels: -60m, -45m, -30m, -15m, now.
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const xLabels = [
+    {t: 60, text: "-60m"},
+    {t: 45, text: "-45m"},
+    {t: 30, text: "-30m"},
+    {t: 15, text: "-15m"},
+    {t:  0, text: "now"},
+  ];
+  for (const lab of xLabels) {
+    const frac = 1 - (lab.t / 60);
+    const x = padL + plotW * frac;
+    ctx.fillText(lab.text, x, padT + plotH + 4);
+  }
+
+  // Line
+  if (visible.length < 2) return;
+  ctx.strokeStyle = opts.color || "#fbbb24";
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  let first = true;
+  for (const s of visible) {
+    const xFrac = (s.ts_ms - tMin) / (tMax - tMin);
+    const yFrac = (s[field] - yMin) / (yMax - yMin);
+    const x = padL + plotW * xFrac;
+    const y = padT + plotH * (1 - yFrac);
+    if (first) {
+      ctx.moveTo(x, y);
+      first = false;
+    } else {
+      ctx.lineTo(x, y);
+    }
+  }
+  ctx.stroke();
+
+  // Current value label in the top-right corner.
+  const last = visible[visible.length - 1];
+  const lastVal = last[field];
+  ctx.fillStyle = opts.color || "#fbbb24";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "top";
+  ctx.font = "bold 12px -apple-system, BlinkMacSystemFont, sans-serif";
+  const unit = opts.unit || "";
+  ctx.fillText(lastVal.toFixed(opts.digits || 2) + unit, cssW - padR - 4, padT + 2);
+}
+
+async function refreshHistory() {
+  try {
+    const r = await fetch("/api/gps/history");
+    if (!r.ok) return;
+    const data = await r.json();
+    const samples = data.samples || [];
+    drawLineChart($("chart-ppm"), samples, "oscillator_ppm",
+      {color: "#fbbb24", unit: " ppm", digits: 3});
+    drawLineChart($("chart-sats"), samples, "used_sats",
+      {color: "#4ade80", unit: "", digits: 0});
+    if (samples.length > 0) {
+      const lastTs = new Date(samples[samples.length - 1].ts_ms).toISOString();
+      $("age-chart-ppm").textContent = ageString(lastTs);
+      $("age-chart-sats").textContent = ageString(lastTs);
+    }
+  } catch (_) {
+    // transient fetch failures are non-fatal; the main refresh() will
+    // surface the error to the operator.
+  }
+}
+
+$("hide-antenna").checked = localStorage.getItem("hide-antenna") === "1";
+$("hide-antenna").addEventListener("change", (e) => {
+  localStorage.setItem("hide-antenna", e.target.checked ? "1" : "0");
+  refresh();
+});
+
+refresh();
+refreshHistory();
+setInterval(refresh, 2000);
+setInterval(refreshHistory, 2000);
+// Also redraw charts on window resize so the canvas stays crisp.
+window.addEventListener("resize", refreshHistory);
+</script>
+</body>
+</html>

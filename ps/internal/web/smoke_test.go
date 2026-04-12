@@ -10,7 +10,7 @@ import (
 
 func TestSmokeTestWebServer(t *testing.T) {
 	trk := tracker.New(-31.94, 115.97)
-	srv := New(trk, &mockStats{}, nil, nil, nil)
+	srv := New(trk, &mockStats{}, nil, nil, nil, nil)
 	if err := srv.Start(0); err != nil {
 		t.Fatal(err)
 	}

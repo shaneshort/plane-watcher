@@ -114,7 +114,7 @@ func (m *mockRejected) Snapshot(limit int) diag.RejectedFrameSummary {
 
 func TestStatsEndpoint(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
-	srv := New(tr, &mockStats{}, nil, nil, nil)
+	srv := New(tr, &mockStats{}, nil, nil, nil, nil)
 	req := httptest.NewRequest("GET", "/api/stats", nil)
 	w := httptest.NewRecorder()
 	srv.handler().ServeHTTP(w, req)
@@ -138,7 +138,7 @@ func TestStatsEndpoint(t *testing.T) {
 
 func TestAircraftEndpoint(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
-	srv := New(tr, &mockStats{}, nil, nil, nil)
+	srv := New(tr, &mockStats{}, nil, nil, nil, nil)
 	req := httptest.NewRequest("GET", "/api/aircraft", nil)
 	w := httptest.NewRecorder()
 	srv.handler().ServeHTTP(w, req)
@@ -156,7 +156,7 @@ func TestAircraftEndpoint(t *testing.T) {
 
 func TestDropsEndpoint(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
-	srv := New(tr, &mockStats{}, nil, nil, &mockRejected{})
+	srv := New(tr, &mockStats{}, nil, nil, &mockRejected{}, nil)
 	req := httptest.NewRequest("GET", "/api/drops", nil)
 	w := httptest.NewRecorder()
 	srv.handler().ServeHTTP(w, req)
@@ -183,7 +183,7 @@ func TestDropsEndpoint(t *testing.T) {
 
 func TestDashboardServed(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
-	srv := New(tr, &mockStats{}, nil, nil, nil)
+	srv := New(tr, &mockStats{}, nil, nil, nil, nil)
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	srv.handler().ServeHTTP(w, req)
@@ -198,7 +198,7 @@ func TestDashboardServed(t *testing.T) {
 func TestSetGainMode(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
 	mr := &mockRadio{}
-	srv := New(tr, &mockStats{}, mr, nil, nil)
+	srv := New(tr, &mockStats{}, mr, nil, nil, nil)
 
 	body := strings.NewReader(`{"mode":"slow_attack"}`)
 	req := httptest.NewRequest("POST", "/api/radio/gain-mode", body)
@@ -215,7 +215,7 @@ func TestSetGainMode(t *testing.T) {
 func TestSetGainModeInvalid(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
 	mr := &mockRadio{}
-	srv := New(tr, &mockStats{}, mr, nil, nil)
+	srv := New(tr, &mockStats{}, mr, nil, nil, nil)
 
 	body := strings.NewReader(`{"mode":"turbo"}`)
 	req := httptest.NewRequest("POST", "/api/radio/gain-mode", body)
@@ -229,7 +229,7 @@ func TestSetGainModeInvalid(t *testing.T) {
 func TestSetGain(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
 	mr := &mockRadio{}
-	srv := New(tr, &mockStats{}, mr, nil, nil)
+	srv := New(tr, &mockStats{}, mr, nil, nil, nil)
 
 	body := strings.NewReader(`{"gain_db":"40"}`)
 	req := httptest.NewRequest("POST", "/api/radio/gain", body)
@@ -248,7 +248,7 @@ func TestSetGain(t *testing.T) {
 
 func TestSetGainNoRadio(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
-	srv := New(tr, &mockStats{}, nil, nil, nil)
+	srv := New(tr, &mockStats{}, nil, nil, nil, nil)
 
 	body := strings.NewReader(`{"gain_db":"40"}`)
 	req := httptest.NewRequest("POST", "/api/radio/gain", body)
@@ -262,7 +262,7 @@ func TestSetGainNoRadio(t *testing.T) {
 func TestSetQuietScoreShift(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
 	md := &mockDetector{}
-	srv := New(tr, &mockStats{}, nil, md, nil)
+	srv := New(tr, &mockStats{}, nil, md, nil, nil)
 
 	body := strings.NewReader(`{"value":2}`)
 	req := httptest.NewRequest("POST", "/api/detector/quiet-score-shift", body)
@@ -279,7 +279,7 @@ func TestSetQuietScoreShift(t *testing.T) {
 func TestSetSnrRatioShift(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
 	md := &mockDetector{}
-	srv := New(tr, &mockStats{}, nil, md, nil)
+	srv := New(tr, &mockStats{}, nil, md, nil, nil)
 
 	body := strings.NewReader(`{"value":3}`)
 	req := httptest.NewRequest("POST", "/api/detector/snr-ratio-shift", body)
@@ -296,7 +296,7 @@ func TestSetSnrRatioShift(t *testing.T) {
 func TestSetQuietScoreShiftOutOfRange(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
 	md := &mockDetector{}
-	srv := New(tr, &mockStats{}, nil, md, nil)
+	srv := New(tr, &mockStats{}, nil, md, nil, nil)
 
 	body := strings.NewReader(`{"value":8}`)
 	req := httptest.NewRequest("POST", "/api/detector/quiet-score-shift", body)
@@ -309,7 +309,7 @@ func TestSetQuietScoreShiftOutOfRange(t *testing.T) {
 
 func TestSetDetectorNoConfig(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
-	srv := New(tr, &mockStats{}, nil, nil, nil)
+	srv := New(tr, &mockStats{}, nil, nil, nil, nil)
 
 	body := strings.NewReader(`{"value":1}`)
 	req := httptest.NewRequest("POST", "/api/detector/quiet-score-shift", body)
@@ -322,7 +322,7 @@ func TestSetDetectorNoConfig(t *testing.T) {
 
 func TestStatsEndpointIncludesGPSFields(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
-	srv := New(tr, &mockStats{}, nil, nil, nil)
+	srv := New(tr, &mockStats{}, nil, nil, nil, nil)
 	req := httptest.NewRequest("GET", "/api/stats", nil)
 	w := httptest.NewRecorder()
 	srv.handler().ServeHTTP(w, req)
@@ -350,7 +350,7 @@ func TestStatsEndpointIncludesGPSFields(t *testing.T) {
 
 func TestDashboardContainsGPSLabels(t *testing.T) {
 	tr := tracker.New(-31.94, 115.97)
-	srv := New(tr, &mockStats{}, nil, nil, nil)
+	srv := New(tr, &mockStats{}, nil, nil, nil, nil)
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	srv.handler().ServeHTTP(w, req)
@@ -370,6 +370,48 @@ func TestDashboardContainsGPSLabels(t *testing.T) {
 	for _, label := range advancedLabels {
 		if !strings.Contains(body, label) {
 			t.Errorf("dashboard advanced section missing %q", label)
+		}
+	}
+}
+
+func TestHandleGNSS_WithoutProvider(t *testing.T) {
+	tr := tracker.New(0, 0)
+	srv := New(tr, &mockStats{}, nil, nil, nil, nil)
+	req := httptest.NewRequest("GET", "/api/gps", nil)
+	rec := httptest.NewRecorder()
+	srv.handler().ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["gps"] != nil {
+		t.Errorf("expected gps=null when no provider, got %v", resp["gps"])
+	}
+	if _, ok := resp["gps_error"]; !ok {
+		t.Error("expected gps_error field when no provider")
+	}
+	if _, ok := resp["pps"]; !ok {
+		t.Error("expected pps field populated from StatsProvider")
+	}
+}
+
+func TestHandleGNSS_ServesStaticPage(t *testing.T) {
+	tr := tracker.New(0, 0)
+	srv := New(tr, &mockStats{}, nil, nil, nil, nil)
+	req := httptest.NewRequest("GET", "/gps", nil)
+	rec := httptest.NewRecorder()
+	srv.handler().ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	// Sanity-check the HTML contains things we expect.
+	for _, want := range []string{"plane-watcher — GPS", "hide-antenna", "/api/gps"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("gps.html missing %q", want)
 		}
 	}
 }

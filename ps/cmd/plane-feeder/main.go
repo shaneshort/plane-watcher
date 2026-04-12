@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -19,6 +21,7 @@ import (
 	"github.com/plane-watcher/plane-feeder/internal/chrony"
 	"github.com/plane-watcher/plane-feeder/internal/crc"
 	"github.com/plane-watcher/plane-feeder/internal/diag"
+	"github.com/plane-watcher/plane-feeder/internal/gpsmon"
 	"github.com/plane-watcher/plane-feeder/internal/icao"
 	"github.com/plane-watcher/plane-feeder/internal/pps"
 	"github.com/plane-watcher/plane-feeder/internal/radio"
@@ -436,6 +439,9 @@ func main() {
 	lon := flag.Float64("lon", 0, "Receiver longitude for CPR decode (0 = query gpsd)")
 	alt := flag.Float64("alt", 0, "Receiver altitude in metres (required with --lat/--lon for 0x35 position frames)")
 	gpsdRetryInterval := flag.Duration("gpsd-retry-interval", defaultGPSDRetryInterval, "Retry interval for gpsd receiver position lookup when --lat/--lon are unset")
+	gpsmonAddr := flag.String("gpsmon-addr", "localhost:2947", "gpsd address for the GNSS status monitor (blank to disable)")
+	gpsmonDevice := flag.String("gpsmon-device", "", "gpsd device path for the GNSS monitor (blank = auto-pick first)")
+	gpsmonInterval := flag.Duration("gpsmon-interval", 5*time.Second, "GNSS status poll interval")
 	quietScoreShift := flag.Uint("quiet-score-shift", defaultQuietScoreShift, "Initial quiet_score_shift detector setting")
 	snrRatioShift := flag.Uint("snr-ratio-shift", defaultSnrRatioShift, "Initial snr_ratio_shift detector setting")
 	holdoff := flag.Uint("holdoff", defaultHoldoff, "Initial preamble holdoff in samples (0-4095)")
@@ -543,6 +549,43 @@ func main() {
 		log.Printf("PPS watcher started (polling at 2 Hz, chrony check every 2s)")
 	}
 
+	// --- 3c. GNSS status monitor ---
+	// Long-lived collector that owns exactly one gps.Client and feeds
+	// the /gps dashboard. Separate from the PPS watcher above: pps
+	// reads FPGA AXI registers, gpsmon talks to gpsd. Disabled entirely
+	// in --mock mode (no gpsd to talk to) and when --gpsmon-addr is
+	// explicitly blanked out.
+	var gpsCollector *gpsmon.Collector
+	if !*mock && *gpsmonAddr != "" {
+		// Wire the PPS watcher's oscillator-ppm into the history
+		// sampler. Captured as a closure so gpsmon doesn't need to
+		// import internal/pps — the ownership boundary stays clean
+		// and the callback returns zero cleanly when ppsWatcher is
+		// nil (which it is in --mock mode, though we also gate the
+		// collector itself on !*mock above).
+		ppmFn := func() float64 {
+			if ppsWatcher == nil {
+				return 0
+			}
+			return ppsWatcher.Stats().OscillatorPPM
+		}
+		gpsCollector = gpsmon.New(gpsmon.Options{
+			GpsdAddr:     *gpsmonAddr,
+			DevicePath:   *gpsmonDevice,
+			PollInterval: *gpsmonInterval,
+			Logger:       log.Default(),
+			PPMFn:        ppmFn,
+		})
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go func() {
+			if err := gpsCollector.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("gpsmon: %v", err)
+			}
+		}()
+		log.Printf("GNSS monitor started (gpsd=%s, interval=%s)", *gpsmonAddr, *gpsmonInterval)
+	}
+
 	// --- 5. Beast TCP server ---
 	filter := icao.NewFilter(60 * time.Second)
 	beastSrv := server.New(*port)
@@ -630,7 +673,7 @@ func main() {
 	if rd != nil {
 		rc = rd
 	}
-	webSrv := web.New(trk, ss, rc, dc, rejectedFrames)
+	webSrv := web.New(trk, ss, rc, dc, rejectedFrames, gpsCollector)
 	if err := webSrv.Start(*httpPort); err != nil {
 		log.Fatalf("web server: %v", err)
 	}

@@ -241,6 +241,50 @@ func TestFixedModeFrameFromSVIN(t *testing.T) {
 	}
 }
 
+func TestExtractFixedModeECEF_M8(t *testing.T) {
+	pl := BuildFixedModeTMODE2(-237027004, 487138693, -335500976, 1165)
+	x, y, z, xhp, yhp, zhp, acc, ok := ExtractFixedModeECEF(GenM8, pl)
+	if !ok {
+		t.Fatal("ExtractFixedModeECEF returned ok=false for M8")
+	}
+	if x != -237027004 || y != 487138693 || z != -335500976 {
+		t.Errorf("ECEF = (%d, %d, %d)", x, y, z)
+	}
+	if xhp != 0 || yhp != 0 || zhp != 0 {
+		t.Errorf("M8 HP should be 0, got (%d, %d, %d)", xhp, yhp, zhp)
+	}
+	if acc != 1165 {
+		t.Errorf("fixedPosAccMM = %d, want 1165", acc)
+	}
+}
+
+func TestExtractFixedModeECEF_F9(t *testing.T) {
+	// F9 TMODE3: 0.1 mm internal units for accuracy. 11650 × 0.1mm = 1165mm.
+	pl := BuildFixedModeTMODE3(-237027004, 487138693, -335500976, 7, -3, 5, 11650)
+	x, y, z, xhp, yhp, zhp, accMM, ok := ExtractFixedModeECEF(GenF9, pl)
+	if !ok {
+		t.Fatal("ExtractFixedModeECEF returned ok=false for F9")
+	}
+	if x != -237027004 || y != 487138693 || z != -335500976 {
+		t.Errorf("ECEF = (%d, %d, %d)", x, y, z)
+	}
+	if xhp != 7 || yhp != -3 || zhp != 5 {
+		t.Errorf("F9 HP = (%d, %d, %d)", xhp, yhp, zhp)
+	}
+	if accMM != 1165 {
+		t.Errorf("fixedPosAccMM = %d, want 1165", accMM)
+	}
+}
+
+func TestExtractFixedModeECEF_Truncated(t *testing.T) {
+	if _, _, _, _, _, _, _, ok := ExtractFixedModeECEF(GenM8, []byte{0, 0}); ok {
+		t.Error("expected ok=false for truncated M8 payload")
+	}
+	if _, _, _, _, _, _, _, ok := ExtractFixedModeECEF(GenF9, []byte{0, 0}); ok {
+		t.Error("expected ok=false for truncated F9 payload")
+	}
+}
+
 func TestTMODEMode(t *testing.T) {
 	m8Fixed := BuildFixedModeTMODE2(1, 2, 3, 100)
 	if m := TMODEMode(GenM8, m8Fixed); m != 2 {

@@ -267,8 +267,12 @@ func (c *Client) readLoop() {
 			if c.debug != nil {
 				c.debug.Printf("[gpsd] WATCH: %s", string(line))
 			}
+		case "TPV":
+			c.handleTPVMsg(line, head.Device)
+		case "SKY":
+			c.handleSKYMsg(line, head.Device)
 		default:
-			// TPV, SKY, VERSION, etc. — not used by us.
+			// VERSION, etc. — not used by us.
 		}
 	}
 	if err := c.scan.Err(); err != nil {
@@ -321,6 +325,58 @@ func (c *Client) handleDeviceMsg(line []byte) {
 		}
 	}
 	c.devices = append(c.devices, DeviceInfo{Path: msg.Path, Driver: msg.Driver})
+}
+
+// handleTPVMsg parses a gpsd TPV JSON message and stores it atomically
+// on the matching DeviceClient. Dropped silently if no subscription
+// exists for the device path (e.g. a multi-device setup where we only
+// care about one receiver).
+func (c *Client) handleTPVMsg(line []byte, devicePath string) {
+	tpv := &TPV{}
+	if err := json.Unmarshal(line, tpv); err != nil {
+		if c.debug != nil {
+			c.debug.Printf("[gpsd] TPV parse: %v", err)
+		}
+		return
+	}
+	c.subsMu.Lock()
+	dc := c.subs[devicePath]
+	c.subsMu.Unlock()
+	if dc == nil {
+		return
+	}
+	dc.latestTPV.Store(tpv)
+}
+
+// handleSKYMsg parses a gpsd SKY JSON message and stores it atomically
+// on the matching DeviceClient.
+//
+// gpsd alternates between two SKY variants: a "full" one with the
+// satellites[] array and nSat populated, and a "sparse" one with only
+// the DOP fields and uSat. The sparse variant's uSat also counts only
+// one constellation where the full variant counts all of them, so
+// merging them is misleading. We drop sparse updates entirely so
+// latestSKY always reflects the most recent FULL picture.
+func (c *Client) handleSKYMsg(line []byte, devicePath string) {
+	sky := &SKY{}
+	if err := json.Unmarshal(line, sky); err != nil {
+		if c.debug != nil {
+			c.debug.Printf("[gpsd] SKY parse: %v", err)
+		}
+		return
+	}
+	if len(sky.Satellites) == 0 && sky.NSat == 0 {
+		// Sparse SKY — DOPs only, no satellite list. Dropping it
+		// preserves the last full snapshot.
+		return
+	}
+	c.subsMu.Lock()
+	dc := c.subs[devicePath]
+	c.subsMu.Unlock()
+	if dc == nil {
+		return
+	}
+	dc.latestSKY.Store(sky)
 }
 
 // handleBareHexLine parses a gpsd raw:1 bare-hex line (e.g.
@@ -466,16 +522,34 @@ func (c *Client) dispatchFrame(devicePath string, f Frame) {
 // the only API the survey-in state machine sees: SendUBX writes through to
 // the underlying gpsd connection (with the device path attached), and
 // WaitFor blocks for a response matching a class/ID predicate.
+//
+// The latestTPV and latestSKY fields cache the most recent gpsd JSON
+// reports for this device; they are written by Client.readLoop and read
+// by consumers (e.g. the gpsmon Collector) via LatestTPV / LatestSKY.
+// Single-writer, multi-reader — atomic.Pointer is sufficient.
 type DeviceClient struct {
 	client    *Client
 	path      string
 	incoming  chan Frame
 	closeOnce sync.Once
 	closed    chan struct{}
+	latestTPV atomic.Pointer[TPV]
+	latestSKY atomic.Pointer[SKY]
 }
 
 // Path returns the device path this client is bound to.
 func (dc *DeviceClient) Path() string { return dc.path }
+
+// LatestTPV returns the most recent TPV report seen for this device, or
+// nil if no TPV has been observed yet. The returned pointer is immutable
+// from the caller's perspective: the Client's reader goroutine only ever
+// writes new *TPV values via atomic.Pointer.Store, never mutates an
+// existing one.
+func (dc *DeviceClient) LatestTPV() *TPV { return dc.latestTPV.Load() }
+
+// LatestSKY returns the most recent SKY report seen for this device, or
+// nil if no SKY has been observed yet.
+func (dc *DeviceClient) LatestSKY() *SKY { return dc.latestSKY.Load() }
 
 // SendUBX wraps the frame in a gpsd ?DEVICE command and writes it. The
 // underlying client's writer mutex serialises concurrent calls.

@@ -481,3 +481,154 @@ func TestClient_GpsdErrorWakesWaiterOnLiveSession(t *testing.T) {
 		t.Fatal("WaitFor did not wake on ERROR within 500ms — still relying on timeout")
 	}
 }
+
+// TestDeviceClient_LatestTPV verifies that a TPV JSON message from gpsd
+// is parsed and stored as the latest TPV on the matching DeviceClient.
+func TestDeviceClient_LatestTPV(t *testing.T) {
+	f, c := newFakeGpsd(t)
+	f.drainWatchHandshake(t)
+	dc := c.Subscribe("/dev/ttyPS1")
+
+	// Inject a realistic TPV message.
+	tpvJSON := `{"class":"TPV","device":"/dev/ttyPS1","mode":3,"time":"2026-04-12T03:14:15.000Z","leapseconds":18,"lat":-31.9424033,"lon":115.9461590,"altMSL":23.56,"altHAE":-7.05,"epx":7.52,"epy":7.95,"epv":0.67}` + "\n"
+	if _, err := f.conn.Write([]byte(tpvJSON)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for the reader to process it.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	var got *TPV
+	for time.Now().Before(deadline) {
+		got = dc.LatestTPV()
+		if got != nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got == nil {
+		t.Fatal("LatestTPV returned nil after TPV injection")
+	}
+	if got.Mode != FixMode3D {
+		t.Errorf("Mode = %d, want %d", got.Mode, FixMode3D)
+	}
+	if got.Lat < -32 || got.Lat > -31 {
+		t.Errorf("Lat = %f, want around -31.94", got.Lat)
+	}
+	if got.LeapSeconds != 18 {
+		t.Errorf("LeapSeconds = %d, want 18", got.LeapSeconds)
+	}
+}
+
+// TestDeviceClient_LatestSKY verifies SKY parsing and per-satellite details.
+func TestDeviceClient_LatestSKY(t *testing.T) {
+	f, c := newFakeGpsd(t)
+	f.drainWatchHandshake(t)
+	dc := c.Subscribe("/dev/ttyPS1")
+
+	skyJSON := `{"class":"SKY","device":"/dev/ttyPS1","time":"2026-04-12T03:14:15.000Z","gdop":1.47,"hdop":0.71,"pdop":1.29,"tdop":0.69,"vdop":1.08,"nSat":21,"uSat":18,"satellites":[{"PRN":6,"gnssid":0,"svid":6,"az":139.0,"el":16.0,"ss":40.0,"used":true,"health":1},{"PRN":196,"gnssid":5,"svid":4,"az":16.0,"el":11.0,"ss":0.0,"used":false,"health":2}]}` + "\n"
+	if _, err := f.conn.Write([]byte(skyJSON)); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	var got *SKY
+	for time.Now().Before(deadline) {
+		got = dc.LatestSKY()
+		if got != nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got == nil {
+		t.Fatal("LatestSKY returned nil after SKY injection")
+	}
+	if got.USat != 18 || got.NSat != 21 {
+		t.Errorf("nSat/uSat = %d/%d, want 21/18", got.NSat, got.USat)
+	}
+	if len(got.Satellites) != 2 {
+		t.Fatalf("len(Satellites) = %d, want 2", len(got.Satellites))
+	}
+	first := got.Satellites[0]
+	if first.PRN != 6 || first.GnssID != 0 || !first.Used {
+		t.Errorf("first sat wrong: %+v", first)
+	}
+	if GNSSName(first.GnssID) != "GPS" {
+		t.Errorf("GNSSName(0) = %q, want GPS", GNSSName(first.GnssID))
+	}
+	second := got.Satellites[1]
+	if second.GnssID != 5 || GNSSName(second.GnssID) != "QZSS" || second.Used {
+		t.Errorf("second sat wrong: %+v", second)
+	}
+}
+
+// TestDeviceClient_LatestSKY_SparseDropped verifies that a "sparse" SKY
+// message (DOP-only, no satellites array, no nSat) does NOT overwrite
+// the previous full SKY in latestSKY. gpsd alternates between full and
+// sparse SKY variants; the earlier bug was that the sparse variant
+// stomped on the full one and the dashboard satellite table went
+// blank.
+func TestDeviceClient_LatestSKY_SparseDropped(t *testing.T) {
+	f, c := newFakeGpsd(t)
+	f.drainWatchHandshake(t)
+	dc := c.Subscribe("/dev/ttyPS1")
+
+	// First, a FULL SKY message with satellites.
+	fullJSON := `{"class":"SKY","device":"/dev/ttyPS1","time":"2026-04-12T03:14:15.000Z","gdop":1.47,"nSat":21,"uSat":18,"satellites":[{"PRN":6,"gnssid":0,"svid":6,"az":139.0,"el":16.0,"ss":40.0,"used":true,"health":1}]}` + "\n"
+	if _, err := f.conn.Write([]byte(fullJSON)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Give the reader time to buffer the full message.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	var got *SKY
+	for time.Now().Before(deadline) {
+		got = dc.LatestSKY()
+		if got != nil && len(got.Satellites) > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got == nil || len(got.Satellites) != 1 {
+		t.Fatal("expected full SKY with 1 satellite to be stored")
+	}
+
+	// Now inject a SPARSE SKY — no satellites, no nSat. Should be dropped.
+	sparseJSON := `{"class":"SKY","device":"/dev/ttyPS1","time":"2026-04-12T03:14:16.000Z","gdop":1.48,"hdop":0.72,"pdop":1.30,"tdop":0.70,"vdop":1.09,"xdop":0.52,"ydop":0.50,"uSat":12}` + "\n"
+	if _, err := f.conn.Write([]byte(sparseJSON)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	// LatestSKY must still be the FULL one we stored earlier.
+	got = dc.LatestSKY()
+	if got == nil {
+		t.Fatal("LatestSKY went nil after sparse message")
+	}
+	if len(got.Satellites) != 1 {
+		t.Errorf("len(Satellites) = %d after sparse message, want 1 (sparse should have been dropped)", len(got.Satellites))
+	}
+	if got.NSat != 21 {
+		t.Errorf("NSat = %d, want 21 (should still be the full message)", got.NSat)
+	}
+}
+
+// TestDeviceClient_TPVDifferentDeviceNotStored verifies that a TPV for a
+// different device path does NOT populate LatestTPV on the wrong
+// subscription. This is the same per-device isolation principle as the
+// bare-hex dispatch test.
+func TestDeviceClient_TPVDifferentDeviceNotStored(t *testing.T) {
+	f, c := newFakeGpsd(t)
+	f.drainWatchHandshake(t)
+	dc := c.Subscribe("/dev/ttyPS1")
+
+	// TPV for a DIFFERENT device — should NOT land on dc.
+	otherJSON := `{"class":"TPV","device":"/dev/ttyOTHER","mode":3,"lat":0,"lon":0}` + "\n"
+	if _, err := f.conn.Write([]byte(otherJSON)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	if got := dc.LatestTPV(); got != nil {
+		t.Errorf("LatestTPV for /dev/ttyPS1 should be nil, got %+v", got)
+	}
+}
