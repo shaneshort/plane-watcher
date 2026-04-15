@@ -7,12 +7,14 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"os"
 	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"github.com/plane-watcher/plane-feeder/internal/chrony"
 	"github.com/plane-watcher/plane-feeder/internal/crc"
 	"github.com/plane-watcher/plane-feeder/internal/diag"
+	"github.com/plane-watcher/plane-feeder/internal/gps"
 	"github.com/plane-watcher/plane-feeder/internal/gpsmon"
 	"github.com/plane-watcher/plane-feeder/internal/icao"
 	"github.com/plane-watcher/plane-feeder/internal/pps"
@@ -44,6 +47,7 @@ type statsSource struct {
 	dropCount   *atomic.Uint64
 	msgRate     *atomic.Int64 // msgs/sec * 10 (fixed-point, written by poll loop)
 	crcPassRate *atomic.Int64 // CRC-valid msgs/sec * 10 (fixed-point)
+	guard       *gainGuard
 }
 
 func (s *statsSource) Stats(debug bool) web.StatsData {
@@ -80,6 +84,11 @@ func (s *statsSource) Stats(debug bool) web.StatsData {
 
 	if debug {
 		d.Debug = readDebugCounters(s.reader, s.deepDebug)
+		if s.guard != nil {
+			for k, v := range s.guard.DebugCounters() {
+				d.Debug[k] = v
+			}
+		}
 	}
 
 	return d
@@ -197,14 +206,15 @@ const (
 	defaultQuietScoreShift = 6
 	defaultSnrRatioShift   = 4
 	defaultHoldoff         = 512
-	defaultAutoGainMinDB     = 20.0
-	defaultAutoGainMaxDB     = 30.0
+	defaultAutoGainMinDB      = 20.0
+	defaultAutoGainMaxDB      = 30.0
 	defaultAutoGainStepDownDB = 1.0
 	defaultAutoGainStepUpDB   = 1.0
-	defaultAutoGainHot75      = 1
-	defaultAutoGainHot87      = 1
-	defaultAutoGainHotHold    = 2
-	defaultAutoGainCalmHold   = 12
+	defaultAutoGainHotNear    = 50
+	defaultAutoGainHot75      = 1000
+	defaultAutoGainHot87      = 100
+	defaultAutoGainHotHold    = 3
+	defaultAutoGainCalmHold   = 8
 	statusInterval           = 1 * time.Second
 	positionInterval         = 30 * time.Second
 	softResetSettleTime      = 5 * time.Millisecond
@@ -235,12 +245,14 @@ type radarcapeState struct {
 }
 
 type gainGuard struct {
+	mu               sync.RWMutex
 	enabled          bool
 	rd               *radio.Radio
 	minGainDB        float64
 	maxGainDB        float64
 	stepDownDB       float64
 	stepUpDB         float64
+	hotNearThreshold uint32
 	hot87Threshold   uint32
 	hot75Threshold   uint32
 	hotHoldIntervals int
@@ -255,6 +267,8 @@ type gainGuard struct {
 }
 
 func (g *gainGuard) Observe(now time.Time, currentGainDB float64, gainMode string, dbg map[string]uint32) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if !g.enabled || g.rd == nil {
 		return
 	}
@@ -280,8 +294,9 @@ func (g *gainGuard) Observe(now time.Time, currentGainDB float64, gainMode strin
 	dSat := saturatingDelta(curSat, g.lastSat)
 	g.last75, g.last87, g.lastNear, g.lastSat = cur75, cur87, curNear, curSat
 
-	overdriven := dNear > 0 || dSat > 0
-	hot := overdriven || d87 >= g.hot87Threshold || d75 >= g.hot75Threshold
+	overdriven := dSat > 0
+	hotByThreshold := dNear >= g.hotNearThreshold || d87 >= g.hot87Threshold || d75 >= g.hot75Threshold
+	hot := overdriven || hotByThreshold
 	calm := d75 == 0 && d87 == 0 && dNear == 0 && dSat == 0
 
 	if hot {
@@ -295,7 +310,12 @@ func (g *gainGuard) Observe(now time.Time, currentGainDB float64, gainMode strin
 		g.calmStreak = 0
 	}
 
-	if g.hotStreak >= g.hotHoldIntervals {
+	requiredHotStreak := g.hotHoldIntervals
+	if overdriven {
+		requiredHotStreak = 1
+	}
+
+	if g.hotStreak >= requiredHotStreak {
 		next := maxFloat(g.minGainDB, currentGainDB-g.stepDownDB)
 		if next < currentGainDB {
 			if err := g.rd.SetGain(formatWholeGain(next)); err != nil {
@@ -323,6 +343,87 @@ func (g *gainGuard) Observe(now time.Time, currentGainDB float64, gainMode strin
 		g.hotStreak = 0
 		g.calmStreak = 0
 	}
+}
+
+func (g *gainGuard) DebugCounters() map[string]uint32 {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	minGain := uint32(math.Round(g.minGainDB))
+	maxGain := uint32(math.Round(g.maxGainDB))
+	stepDown := uint32(math.Round(g.stepDownDB))
+	stepUp := uint32(math.Round(g.stepUpDB))
+	enabled := uint32(0)
+	if g.enabled {
+		enabled = 1
+	}
+	return map[string]uint32{
+		"auto_gain_guard_enabled":   enabled,
+		"auto_gain_min_db":          minGain,
+		"auto_gain_max_db":          maxGain,
+		"auto_gain_step_down_db":    stepDown,
+		"auto_gain_step_up_db":      stepUp,
+		"auto_gain_hot_near":        g.hotNearThreshold,
+		"auto_gain_hot75":           g.hot75Threshold,
+		"auto_gain_hot87":           g.hot87Threshold,
+		"auto_gain_hot_hold":        uint32(g.hotHoldIntervals),
+		"auto_gain_calm_hold":       uint32(g.calmHoldIntervals),
+	}
+}
+
+func (g *gainGuard) ApplyConfig(cfg web.GainGuardConfig) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if cfg.Enabled != nil {
+		g.enabled = *cfg.Enabled
+		if !g.enabled {
+			g.hotStreak = 0
+			g.calmStreak = 0
+		}
+	}
+	if cfg.MinGainDB != nil {
+		g.minGainDB = *cfg.MinGainDB
+	}
+	if cfg.MaxGainDB != nil {
+		g.maxGainDB = *cfg.MaxGainDB
+	}
+	if g.minGainDB > g.maxGainDB {
+		return fmt.Errorf("min gain %.0f exceeds max gain %.0f", g.minGainDB, g.maxGainDB)
+	}
+	if cfg.StepDownDB != nil {
+		if *cfg.StepDownDB <= 0 {
+			return fmt.Errorf("step down must be > 0")
+		}
+		g.stepDownDB = *cfg.StepDownDB
+	}
+	if cfg.StepUpDB != nil {
+		if *cfg.StepUpDB <= 0 {
+			return fmt.Errorf("step up must be > 0")
+		}
+		g.stepUpDB = *cfg.StepUpDB
+	}
+	if cfg.HotNearThreshold != nil {
+		g.hotNearThreshold = *cfg.HotNearThreshold
+	}
+	if cfg.Hot75Threshold != nil {
+		g.hot75Threshold = *cfg.Hot75Threshold
+	}
+	if cfg.Hot87Threshold != nil {
+		g.hot87Threshold = *cfg.Hot87Threshold
+	}
+	if cfg.HotHoldIntervals != nil {
+		if *cfg.HotHoldIntervals < 1 {
+			return fmt.Errorf("hot hold must be >= 1")
+		}
+		g.hotHoldIntervals = *cfg.HotHoldIntervals
+	}
+	if cfg.CalmHoldIntervals != nil {
+		if *cfg.CalmHoldIntervals < 1 {
+			return fmt.Errorf("calm hold must be >= 1")
+		}
+		g.calmHoldIntervals = *cfg.CalmHoldIntervals
+	}
+	return nil
 }
 
 func saturatingDelta(cur, prev uint32) uint32 {
@@ -451,6 +552,7 @@ func main() {
 	autoGainMax := flag.Float64("auto-gain-max", defaultAutoGainMaxDB, "Maximum manual gain in dB for --auto-gain-guard")
 	autoGainStepDown := flag.Float64("auto-gain-step-down", defaultAutoGainStepDownDB, "Gain step down in dB when the frontend stays hot")
 	autoGainStepUp := flag.Float64("auto-gain-step-up", defaultAutoGainStepUpDB, "Gain step up in dB when the frontend stays calm")
+	autoGainHotNear := flag.Uint("auto-gain-hot-near", defaultAutoGainHotNear, "raw_iq_nearrail delta threshold per guard interval that counts as hot")
 	autoGainHot75 := flag.Uint("auto-gain-hot75", defaultAutoGainHot75, "raw_iq_75pct delta threshold per guard interval that counts as hot")
 	autoGainHot87 := flag.Uint("auto-gain-hot87", defaultAutoGainHot87, "raw_iq_87p5pct delta threshold per guard interval that counts as hot")
 	autoGainHotHold := flag.Int("auto-gain-hot-hold", defaultAutoGainHotHold, "Consecutive hot guard intervals before lowering gain")
@@ -557,33 +659,45 @@ func main() {
 	// explicitly blanked out.
 	var gpsCollector *gpsmon.Collector
 	if !*mock && *gpsmonAddr != "" {
-		// Wire the PPS watcher's oscillator-ppm into the history
-		// sampler. Captured as a closure so gpsmon doesn't need to
-		// import internal/pps — the ownership boundary stays clean
-		// and the callback returns zero cleanly when ppsWatcher is
-		// nil (which it is in --mock mode, though we also gate the
-		// collector itself on !*mock above).
-		ppmFn := func() float64 {
-			if ppsWatcher == nil {
-				return 0
+		// Probe gpsd before committing to the full collector. A
+		// read-only or unreachable gpsd must not prevent ADS-B feeding.
+		probeCtx, probeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		probeClient, probeErr := gps.Dial(probeCtx, *gpsmonAddr)
+		if probeErr != nil {
+			probeCancel()
+			log.Printf("WARNING: unable to configure GPS monitoring (%v), continuing without", probeErr)
+		} else {
+			probeClient.Close()
+			probeCancel()
+
+			// Wire the PPS watcher's oscillator-ppm into the history
+			// sampler. Captured as a closure so gpsmon doesn't need to
+			// import internal/pps — the ownership boundary stays clean
+			// and the callback returns zero cleanly when ppsWatcher is
+			// nil (which it is in --mock mode, though we also gate the
+			// collector itself on !*mock above).
+			ppmFn := func() float64 {
+				if ppsWatcher == nil {
+					return 0
+				}
+				return ppsWatcher.Stats().OscillatorPPM
 			}
-			return ppsWatcher.Stats().OscillatorPPM
+			gpsCollector = gpsmon.New(gpsmon.Options{
+				GpsdAddr:     *gpsmonAddr,
+				DevicePath:   *gpsmonDevice,
+				PollInterval: *gpsmonInterval,
+				Logger:       log.Default(),
+				PPMFn:        ppmFn,
+			})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go func() {
+				if err := gpsCollector.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+					log.Printf("WARNING: GPS monitoring stopped (%v), continuing without", err)
+				}
+			}()
+			log.Printf("GNSS monitor started (gpsd=%s, interval=%s)", *gpsmonAddr, *gpsmonInterval)
 		}
-		gpsCollector = gpsmon.New(gpsmon.Options{
-			GpsdAddr:     *gpsmonAddr,
-			DevicePath:   *gpsmonDevice,
-			PollInterval: *gpsmonInterval,
-			Logger:       log.Default(),
-			PPMFn:        ppmFn,
-		})
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		go func() {
-			if err := gpsCollector.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				log.Printf("gpsmon: %v", err)
-			}
-		}()
-		log.Printf("GNSS monitor started (gpsd=%s, interval=%s)", *gpsmonAddr, *gpsmonInterval)
 	}
 
 	// --- 5. Beast TCP server ---
@@ -669,11 +783,25 @@ func main() {
 		msgRate:     &msgRate,
 		crcPassRate: &crcPassRate,
 	}
+	guard := &gainGuard{
+		enabled:           *autoGainGuard,
+		rd:                rd,
+		minGainDB:         *autoGainMin,
+		maxGainDB:         *autoGainMax,
+		stepDownDB:        *autoGainStepDown,
+		stepUpDB:          *autoGainStepUp,
+		hotNearThreshold:  uint32(*autoGainHotNear),
+		hot75Threshold:    uint32(*autoGainHot75),
+		hot87Threshold:    uint32(*autoGainHot87),
+		hotHoldIntervals:  *autoGainHotHold,
+		calmHoldIntervals: *autoGainCalmHold,
+	}
+	ss.guard = guard
 	var rc web.RadioController
 	if rd != nil {
 		rc = rd
 	}
-	webSrv := web.New(trk, ss, rc, dc, rejectedFrames, gpsCollector)
+	webSrv := web.New(trk, ss, rc, dc, guard, rejectedFrames, gpsCollector)
 	if err := webSrv.Start(*httpPort); err != nil {
 		log.Fatalf("web server: %v", err)
 	}
@@ -692,22 +820,10 @@ func main() {
 		lastCrcPassSnap uint32
 		lastReadAt      time.Time
 	)
-	guard := &gainGuard{
-		enabled:           *autoGainGuard,
-		rd:                rd,
-		minGainDB:         *autoGainMin,
-		maxGainDB:         *autoGainMax,
-		stepDownDB:        *autoGainStepDown,
-		stepUpDB:          *autoGainStepUp,
-		hot75Threshold:    uint32(*autoGainHot75),
-		hot87Threshold:    uint32(*autoGainHot87),
-		hotHoldIntervals:  *autoGainHotHold,
-		calmHoldIntervals: *autoGainCalmHold,
-	}
 	if guard.enabled {
-		log.Printf("gain guard enabled: min=%.0f max=%.0f down=%.0f up=%.0f hot75>=%d hot87>=%d hot_hold=%d calm_hold=%d",
+		log.Printf("gain guard enabled: min=%.0f max=%.0f down=%.0f up=%.0f hotNear>=%d hot75>=%d hot87>=%d hot_hold=%d calm_hold=%d",
 			guard.minGainDB, guard.maxGainDB, guard.stepDownDB, guard.stepUpDB,
-			guard.hot75Threshold, guard.hot87Threshold, guard.hotHoldIntervals, guard.calmHoldIntervals)
+			guard.hotNearThreshold, guard.hot75Threshold, guard.hot87Threshold, guard.hotHoldIntervals, guard.calmHoldIntervals)
 	}
 
 	emit := func(msg regs.Message, clockRef *pps.ClockRef) {

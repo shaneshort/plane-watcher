@@ -1,0 +1,34 @@
+{{define "dashboard_state"}}<section class="pw-hero">
+  <div class="pw-hero-copy">
+    <div class="pw-eyebrow">Receiver Status</div>
+    <div class="pw-hero-title">{{.HeroTitle}}</div>
+    <div class="pw-hero-subtitle">{{.HeroSubtitle}}</div>
+    <div class="pw-hero-meta">{{range .HeroMeta}}
+      <div class="pw-hero-meta-item">
+        <div class="pw-hero-meta-label">{{.Label}}</div>
+        <div class="pw-hero-meta-value">{{.Value}}</div>
+      </div>{{end}}
+    </div>
+  </div>
+  <div class="pw-status-strip">{{range .Pills}}
+    <article class="pw-status-pill" data-state="{{.State}}">
+      <span class="pw-status-dot"></span>
+      <div class="pw-status-label">{{.Label}}</div>
+      <div class="pw-status-value">{{.Value}}</div>
+      <div class="pw-status-reason">{{.Reason}}</div>
+    </article>{{end}}
+  </div>
+</section>
+<div class="pw-radio-bar">{{range $i, $it := .RadioBar}}{{if $i}} | {{end}}{{$it.Label}}: <span{{if $it.Class}} class="{{$it.Class}}"{{end}}>{{$it.Value}}</span>{{end}}</div>
+<div class="pw-stat-grid">{{range .Stats}}
+  <div class="pw-stat">
+    <div class="pw-stat-label">{{.Label}}</div>
+    <div class="pw-stat-value{{if .Class}} {{.Class}}{{end}}">{{.Value}}</div>
+  </div>{{end}}
+</div>{{if .GPSStats}}
+<div class="pw-stat-grid">{{range .GPSStats}}
+  <div class="pw-stat">
+    <div class="pw-stat-label">{{.Label}}</div>
+    <div class="pw-stat-value{{if .Class}} {{.Class}}{{end}}">{{.Value}}</div>
+  </div>{{end}}
+</div>{{end}}{{end}}

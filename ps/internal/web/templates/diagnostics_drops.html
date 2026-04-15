@@ -1,0 +1,32 @@
+{{define "diagnostics_drops"}}<div class="pw-panel-grid">
+  <div class="pw-panel">
+    <div class="pw-panel-head">
+      <div class="pw-panel-title">Drop Reasons</div>
+      <div class="pw-panel-meta">Counts by category</div>
+    </div>
+    <div class="pw-table-shell overflow-x-auto rounded-2xl border border-border bg-surface-1/70">
+      <table>
+        <thead><tr><th>Reason</th><th class="text-right">Count</th></tr></thead>
+        <tbody>{{if .Reasons}}{{range .Reasons}}<tr><td>{{.Label}}</td><td class="text-right">{{.Count}}</td></tr>{{end}}{{else}}<tr><td colspan="2" class="text-center text-text-secondary">No rejections</td></tr>{{end}}</tbody>
+      </table>
+    </div>
+    <div class="pw-table-shell overflow-x-auto rounded-2xl border border-border bg-surface-1/70">
+      <table>
+        <thead><tr><th>DF</th><th class="text-right">Count</th></tr></thead>
+        <tbody>{{if .DFs}}{{range .DFs}}<tr><td>{{.Label}}</td><td class="text-right">{{.Count}}</td></tr>{{end}}{{else}}<tr><td colspan="2" class="text-center text-text-secondary">No rejected frames</td></tr>{{end}}</tbody>
+      </table>
+    </div>
+  </div>
+  <div class="pw-panel">
+    <div class="pw-panel-head">
+      <div class="pw-panel-title">Recent Frames</div>
+      <div class="pw-panel-meta">Representative rejects</div>
+    </div>
+    <div class="pw-table-shell overflow-x-auto rounded-2xl border border-border bg-surface-1/70">
+      <table>
+        <thead><tr><th>Seen</th><th>Reason</th><th>DF</th><th>Derived ICAO</th><th>Payload</th><th class="text-right">Signal</th></tr></thead>
+        <tbody>{{if .Recent}}{{range .Recent}}<tr><td>{{.Seen}}</td><td>{{.Reason}}</td><td>{{.DF}}</td><td class="font-mono text-[0.75rem]">{{.DerivedICAO}}</td><td class="font-mono text-[0.75rem]">{{.Payload}}</td><td class="text-right">{{.Signal}}</td></tr>{{end}}{{else}}<tr><td colspan="6" class="text-center text-text-secondary">No rejected frames</td></tr>{{end}}</tbody>
+      </table>
+    </div>
+  </div>
+</div>{{end}}

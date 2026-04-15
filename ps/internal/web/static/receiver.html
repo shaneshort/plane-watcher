@@ -1,0 +1,252 @@
+<section class="mb-3 rounded-2xl border border-border bg-gradient-to-b from-surface-2/95 to-surface-1/95 p-4">
+  <div class="mb-1 text-[0.74rem] font-bold uppercase tracking-[0.14em] text-brand-soft">Receiver Control</div>
+  <div class="max-w-[56rem] text-[1rem] font-semibold text-text-primary">Adjust radio behaviour, detector gates, and gain protection without touching the FPGA image.</div>
+  <p class="mt-2 max-w-[64rem] text-sm text-text-secondary">This page is the appliance control surface. Operational knobs live here with short explanations; raw internals stay on Diagnostics.</p>
+</section>
+
+<div id="receiver-state-fragment"></div>
+
+<section class="space-y-3">
+  <section class="pw-panel">
+    <div class="pw-panel-head">
+      <div class="pw-panel-title">Radio</div>
+      <div class="pw-panel-meta">Immediate control</div>
+    </div>
+    <p class="pw-lead">Set the current gain mode and manual gain. These are the fastest controls for how the frontend behaves right now.</p>
+    <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
+      <div class="pw-controls">
+        <div class="pw-control-grid">
+          <label class="pw-control-label">
+            <span>Gain Mode</span>
+            <input id="radio-gain-mode" list="gain-modes" type="text" value="manual">
+            <datalist id="gain-modes">
+              <option value="manual"></option>
+              <option value="slow_attack"></option>
+              <option value="fast_attack"></option>
+              <option value="hybrid"></option>
+            </datalist>
+          </label>
+          <label class="pw-control-label">
+            <span>Gain dB</span>
+            <input id="radio-gain-db" type="number" step="1">
+          </label>
+        </div>
+        <div class="mt-3 text-xs text-text-secondary">Use manual gain when you want reproducible experiments. Use automatic modes only when you specifically want the RFIC deciding the operating point.</div>
+        <div class="pw-control-actions">
+          <button class="pw-button" type="button" id="radio-apply">Apply Radio</button>
+          <span class="pw-control-status" id="radio-status-msg"></span>
+        </div>
+      </div>
+      <div id="receiver-radio-fragment"></div>
+    </div>
+  </section>
+
+  <section class="pw-panel">
+    <div class="pw-panel-head">
+      <div class="pw-panel-title">Detector</div>
+      <div class="pw-panel-meta">Runtime tuning</div>
+    </div>
+    <p class="pw-lead">These gates shape how aggressively the FPGA claims candidates. Use them when comparing strict versus permissive behaviour without rebuilding a bitstream.</p>
+    <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
+      <div class="pw-controls">
+        <div class="pw-control-grid">
+          <label class="pw-control-label"><span>Quiet Score Shift</span><input id="det-quiet-shift" type="number" min="0" max="7" step="1"></label>
+          <label class="pw-control-label"><span>SNR Ratio Shift</span><input id="det-snr-shift" type="number" min="0" max="7" step="1"></label>
+          <label class="pw-control-label"><span>Holdoff</span><input id="det-holdoff" type="number" min="0" max="4095" step="1"></label>
+        </div>
+        <div class="mt-3 text-xs text-text-secondary">Quiet and SNR shifts change preamble permissiveness. Holdoff protects the decoder bank from being retriggered too aggressively on nearby activity.</div>
+        <div class="pw-control-actions">
+          <button class="pw-button" type="button" id="detector-apply">Apply Detector</button>
+          <span class="pw-control-status" id="detector-status-msg"></span>
+        </div>
+      </div>
+      <div id="receiver-detector-fragment"></div>
+    </div>
+  </section>
+
+  <section class="pw-panel">
+    <div class="pw-panel-head">
+      <div class="pw-panel-title">Gain Guard</div>
+      <div class="pw-panel-meta">Operational safety net</div>
+    </div>
+    <p class="pw-lead">The gain guard tries to keep the frontend out of trouble without giving away too much range. These thresholds decide what “too hot” and “calm enough” mean.</p>
+    <div class="mt-4 pw-controls">
+      <div class="pw-control-grid">
+        <label class="pw-control-label"><span>Enabled</span><input id="gg-enabled" type="checkbox"></label>
+        <label class="pw-control-label"><span>Min dB</span><input id="gg-min" type="number" step="1"></label>
+        <label class="pw-control-label"><span>Max dB</span><input id="gg-max" type="number" step="1"></label>
+        <label class="pw-control-label"><span>Step Down</span><input id="gg-step-down" type="number" step="1"></label>
+        <label class="pw-control-label"><span>Step Up</span><input id="gg-step-up" type="number" step="1"></label>
+        <label class="pw-control-label"><span>Hot Near</span><input id="gg-hot-near" type="number" step="1"></label>
+        <label class="pw-control-label"><span>Hot 75%</span><input id="gg-hot75" type="number" step="1"></label>
+        <label class="pw-control-label"><span>Hot 87.5%</span><input id="gg-hot87" type="number" step="1"></label>
+        <label class="pw-control-label"><span>Hot Hold</span><input id="gg-hot-hold" type="number" step="1" min="1"></label>
+        <label class="pw-control-label"><span>Calm Hold</span><input id="gg-calm-hold" type="number" step="1" min="1"></label>
+      </div>
+      <div class="mt-3 text-xs text-text-secondary">A lower hot threshold protects strong-signal handling sooner. A longer calm hold keeps the gain from bouncing upward too quickly after a noisy burst.</div>
+      <div class="pw-control-actions">
+        <button class="pw-button" type="button" id="gg-apply">Apply Gain Guard</button>
+        <span class="pw-control-status" id="gg-status"></span>
+      </div>
+    </div>
+  </section>
+</section>
+
+<script>
+(function () {
+  "use strict";
+
+  const REFRESH_INTERVAL_MS = 2000;
+  const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
+  const errorBanner = document.getElementById('error');
+  const stateFragment = document.getElementById('receiver-state-fragment');
+  const radioFragment = document.getElementById('receiver-radio-fragment');
+  const detectorFragment = document.getElementById('receiver-detector-fragment');
+
+  // Set an input value without clobbering whatever the operator is currently
+  // typing — active-element and type-aware so polling doesn't fight edits.
+  function setInputValue(id, value, isCheckbox) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (isCheckbox) {
+      el.checked = Boolean(value);
+      return;
+    }
+    if (document.activeElement === el) return;
+    if (value == null) return;
+    el.value = value;
+  }
+
+  function fieldValue(id) {
+    return document.getElementById(id).value;
+  }
+
+  function numericField(id) {
+    return Number(fieldValue(id));
+  }
+
+  function checkboxField(id) {
+    return document.getElementById(id).checked;
+  }
+
+  async function postJSON(url, payload) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || (url + ' HTTP ' + response.status));
+    }
+    return response;
+  }
+
+  async function refreshReceiverFragments() {
+    const response = await fetch('/partials/receiver/state');
+    if (!response.ok) throw new Error('receiver partial HTTP ' + response.status);
+    const template = document.createElement('template');
+    template.innerHTML = (await response.text()).trim();
+
+    // The receiver-state partial renders three sibling blocks in a stable
+    // order: stats grid, radio summary, detector summary. Split them across
+    // the three UI zones so the control panel layout stays intact.
+    const parts = template.content.children;
+    const empty = document.createTextNode('');
+    stateFragment.replaceChildren(parts[0] ? parts[0].cloneNode(true) : empty);
+    radioFragment.replaceChildren(parts[1] ? parts[1].cloneNode(true) : empty);
+    detectorFragment.replaceChildren(parts[2] ? parts[2].cloneNode(true) : empty);
+  }
+
+  async function refreshStats() {
+    const response = await fetch('/api/stats?debug=1');
+    if (!response.ok) throw new Error('stats HTTP ' + response.status);
+    const data = await response.json();
+    const radio = data.radio || {};
+    const debug = data.debug || {};
+
+    setInputValue('radio-gain-mode', radio.gain_mode || '');
+    const parsedGain = (radio.gain_db || '').match(/-?\d+(\.\d+)?/);
+    if (parsedGain) setInputValue('radio-gain-db', parsedGain[0]);
+
+    setInputValue('det-quiet-shift', debug.quiet_score_shift);
+    setInputValue('det-snr-shift', debug.snr_ratio_shift);
+    setInputValue('det-holdoff', debug.holdoff);
+
+    setInputValue('gg-enabled', debug.auto_gain_guard_enabled === 1, true);
+    setInputValue('gg-min', debug.auto_gain_min_db);
+    setInputValue('gg-max', debug.auto_gain_max_db);
+    setInputValue('gg-step-down', debug.auto_gain_step_down_db);
+    setInputValue('gg-step-up', debug.auto_gain_step_up_db);
+    setInputValue('gg-hot-near', debug.auto_gain_hot_near);
+    setInputValue('gg-hot75', debug.auto_gain_hot75);
+    setInputValue('gg-hot87', debug.auto_gain_hot87);
+    setInputValue('gg-hot-hold', debug.auto_gain_hot_hold);
+    setInputValue('gg-calm-hold', debug.auto_gain_calm_hold);
+  }
+
+  // Wraps an "Apply" button so the status line always reflects outcome,
+  // even if an awaited POST throws partway through a multi-step sequence.
+  async function runApply(statusId, fn) {
+    const status = document.getElementById(statusId);
+    status.textContent = 'Applying...';
+    try {
+      await fn();
+      status.textContent = 'Applied';
+    } catch (err) {
+      status.textContent = 'Failed';
+      throw err;
+    }
+  }
+
+  function applyRadio() {
+    return runApply('radio-status-msg', async function () {
+      await postJSON('/api/radio/gain-mode', { mode: fieldValue('radio-gain-mode') });
+      await postJSON('/api/radio/gain', { gain_db: fieldValue('radio-gain-db') });
+    });
+  }
+
+  function applyDetector() {
+    return runApply('detector-status-msg', async function () {
+      await postJSON('/api/detector/quiet-score-shift', { value: numericField('det-quiet-shift') });
+      await postJSON('/api/detector/snr-ratio-shift', { value: numericField('det-snr-shift') });
+      await postJSON('/api/detector/holdoff', { value: numericField('det-holdoff') });
+    });
+  }
+
+  function applyGainGuard() {
+    return runApply('gg-status', async function () {
+      await postJSON('/api/radio/gain-guard', {
+        enabled: checkboxField('gg-enabled'),
+        min_gain_db: numericField('gg-min'),
+        max_gain_db: numericField('gg-max'),
+        step_down_db: numericField('gg-step-down'),
+        step_up_db: numericField('gg-step-up'),
+        hot_near: numericField('gg-hot-near'),
+        hot75: numericField('gg-hot75'),
+        hot87: numericField('gg-hot87'),
+        hot_hold: numericField('gg-hot-hold'),
+        calm_hold: numericField('gg-calm-hold'),
+      });
+    });
+  }
+
+  async function tick() {
+    try {
+      errorBanner.classList.add('hidden');
+      await Promise.all([refreshStats(), refreshReceiverFragments()]);
+    } catch (err) {
+      errorBanner.textContent = 'Connection lost: ' + err.message;
+      errorBanner.classList.remove('hidden');
+    }
+  }
+
+  document.getElementById('radio-apply').addEventListener('click', applyRadio);
+  document.getElementById('detector-apply').addEventListener('click', applyDetector);
+  document.getElementById('gg-apply').addEventListener('click', applyGainGuard);
+
+  setInterval(tick, REFRESH_INTERVAL_MS);
+  tick();
+})();
+</script>

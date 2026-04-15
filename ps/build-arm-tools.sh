@@ -65,12 +65,11 @@ if [[ ${#SCRIPTS[@]} -gt 0 ]]; then
 fi
 
 if [[ "$DEPLOY" == "1" ]]; then
-  echo "Stopping plane-feeder"
-  sshpass -panalog ssh ${REMOTE_HOST} "/etc/init.d/S99plane-feeder stop"
-  echo "Copying to ${REMOTE_HOST}:${REMOTE_DIR}"
-  sshpass -panalog scp -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oCheckHostIP=no -O "${DEPLOY_FILES[@]}" "${REMOTE_HOST}:${REMOTE_DIR}"
-  echo "Starting plane-feeder"
-  sshpass -panalog ssh ${REMOTE_HOST} "/etc/init.d/S99plane-feeder start"
+  # SCP to /tmp then atomic mv to avoid ETXTBSY on running binaries.
+  echo "Staging to ${REMOTE_HOST}:/tmp/"
+  sshpass -panalog scp -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oCheckHostIP=no -O "${DEPLOY_FILES[@]}" "${REMOTE_HOST}:/tmp/"
+  echo "Moving into ${REMOTE_DIR}"
+  sshpass -panalog ssh ${REMOTE_HOST} "for f in ${CMDS[*]}; do mv -f /tmp/\$f ${REMOTE_DIR}; done && /etc/init.d/S99plane-feeder restart"
 else
   echo "DEPLOY=0 set — skipping scp to ${REMOTE_HOST}"
 fi

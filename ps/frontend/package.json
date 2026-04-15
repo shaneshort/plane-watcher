@@ -1,0 +1,15 @@
+{
+  "name": "plane-watcher-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tailwind build pipeline for the embedded plane-watcher web UI",
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/input.css -o ../internal/web/static/assets/app.css --minify",
+    "watch:css": "tailwindcss -i ./src/input.css -o ../internal/web/static/assets/app.css --watch",
+    "build:prototype-css": "tailwindcss -i ./src/prototype.css -o ./prototypes/assets/prototype.css --minify",
+    "watch:prototype-css": "tailwindcss -i ./src/prototype.css -o ./prototypes/assets/prototype.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}

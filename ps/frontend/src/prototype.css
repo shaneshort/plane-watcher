@@ -1,0 +1,342 @@
+@import "./tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply min-h-screen bg-surface-0 px-6 py-4 text-[15px] leading-6 text-text-primary antialiased;
+    background:
+      radial-gradient(circle at top right, rgba(var(--color-brand), 0.08), transparent 30%),
+      linear-gradient(180deg, rgba(var(--color-surface-2), 0.8), rgba(var(--color-surface-0), 1));
+  }
+
+  h1 {
+    @apply mb-1 text-2xl font-bold tracking-[0.02em] text-brand;
+  }
+
+  h2 {
+    @apply my-4 flex items-baseline justify-between gap-2 text-[0.98rem] font-bold text-brand;
+  }
+
+  a {
+    @apply text-text-secondary transition-colors hover:text-brand;
+  }
+
+  input,
+  select,
+  button {
+    @apply font-sans;
+  }
+
+  input[type="text"],
+  input[type="number"],
+  select {
+    @apply w-full rounded-xl border border-border bg-surface-2/95 px-3 py-2 text-sm text-text-primary outline-none ring-0 transition-colors placeholder:text-text-disabled focus:border-brand focus:bg-surface-3/90;
+  }
+
+  input[type="checkbox"] {
+    accent-color: rgb(var(--color-brand));
+  }
+
+  table {
+    @apply w-full border-collapse;
+  }
+
+  thead th {
+    @apply border-b border-border-strong bg-surface-3/85 px-3 py-2 text-left text-[0.72rem] uppercase tracking-[0.04em] text-brand-soft;
+  }
+
+  tbody td {
+    @apply border-b border-border px-3 py-[0.34rem] text-[0.82rem] text-text-primary;
+    font-variant-numeric: tabular-nums;
+  }
+
+  tbody tr:hover td {
+    @apply bg-surface-3/55;
+  }
+}
+
+@layer components {
+  .pw-topbar {
+    @apply mb-1 flex items-start justify-between gap-3;
+  }
+
+  .pw-build-chip {
+    @apply whitespace-nowrap rounded-full border border-brand/35 bg-brand/10 px-2.5 py-1 font-mono text-[0.72rem] font-bold tracking-[0.04em] text-brand;
+  }
+
+  .pw-page-nav {
+    @apply mb-3 border-b border-border pb-2 text-[0.82rem] text-text-secondary;
+  }
+
+  .pw-page-nav a {
+    @apply mr-4 border-b-2 border-transparent pb-1 no-underline;
+  }
+
+  .pw-page-nav a.active {
+    @apply border-brand text-brand;
+  }
+
+  .pw-hero {
+    @apply mb-3 grid gap-3 lg:grid-cols-[minmax(300px,0.95fr)_minmax(0,1.35fr)];
+  }
+
+  .pw-hero-copy {
+    @apply relative overflow-hidden rounded-2xl border border-border-strong bg-gradient-to-br from-surface-2/95 to-surface-1/95 p-4;
+  }
+
+  .pw-hero-copy::after {
+    content: "";
+    position: absolute;
+    top: 3.15rem;
+    right: -15%;
+    width: 70%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(var(--color-brand), 0.08), transparent);
+  }
+
+  .pw-eyebrow {
+    @apply mb-2 text-[0.74rem] font-bold uppercase tracking-[0.14em] text-brand-soft;
+  }
+
+  .pw-hero-title {
+    @apply mb-1 max-w-[14ch] text-[clamp(1.28rem,1.9vw,1.8rem)] font-bold leading-[1.05] tracking-[0.01em] text-text-primary;
+  }
+
+  .pw-hero-subtitle {
+    @apply max-w-[42ch] text-[0.88rem] text-text-secondary;
+  }
+
+  .pw-hero-meta {
+    @apply mt-3 flex flex-wrap gap-x-4 gap-y-2;
+  }
+
+  .pw-hero-meta-item {
+    @apply min-w-[8rem];
+  }
+
+  .pw-hero-meta-label {
+    @apply mb-0.5 text-[0.68rem] uppercase tracking-[0.06em] text-text-disabled;
+  }
+
+  .pw-hero-meta-value {
+    @apply text-base font-semibold text-text-primary;
+  }
+
+  .pw-status-strip {
+    @apply grid gap-2 sm:grid-cols-2 xl:grid-cols-5;
+  }
+
+  .pw-status-pill {
+    @apply relative min-h-[156px] rounded-2xl border border-border bg-gradient-to-b from-surface-2/95 to-surface-1/95 p-3;
+    color: rgb(var(--color-warning));
+  }
+
+  .pw-status-pill::before {
+    content: "";
+    @apply absolute left-3 right-3 top-0 h-0.5 opacity-50;
+    background: linear-gradient(90deg, currentColor, transparent 75%);
+  }
+
+  .pw-status-pill[data-state="good"] {
+    color: rgb(var(--color-success));
+  }
+
+  .pw-status-pill[data-state="warn"] {
+    color: rgb(var(--color-warning));
+  }
+
+  .pw-status-pill[data-state="bad"] {
+    color: rgb(var(--color-danger));
+  }
+
+  .pw-status-dot {
+    @apply mb-2 inline-block h-2.5 w-2.5 rounded-full;
+    background: currentColor;
+    box-shadow: 0 0 14px currentColor;
+  }
+
+  .pw-status-label {
+    @apply mb-1 text-[0.64rem] font-bold uppercase tracking-[0.09em] text-text-secondary;
+  }
+
+  .pw-status-value {
+    @apply mb-1 text-[0.94rem] font-bold text-text-primary;
+  }
+
+  .pw-status-reason {
+    @apply text-[0.74rem] leading-[1.35] text-text-secondary;
+  }
+
+  .pw-stat-grid {
+    @apply mb-2 grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(125px,1fr))];
+  }
+
+  .pw-stat {
+    @apply rounded-xl border border-border bg-gradient-to-b from-surface-2/95 to-surface-1/95 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)];
+  }
+
+  .pw-stat-label {
+    @apply text-[0.7rem] uppercase tracking-[0.05em] text-text-secondary;
+  }
+
+  .pw-stat-value {
+    @apply text-[1.14rem] font-bold text-text-primary;
+  }
+
+  .pw-panel-grid {
+    @apply mb-3 grid gap-3 lg:grid-cols-2;
+  }
+
+  .pw-panel {
+    @apply rounded-2xl border border-border bg-gradient-to-b from-surface-2/95 to-surface-1/95 p-4;
+  }
+
+  .pw-panel-head {
+    @apply mb-3 flex items-baseline justify-between gap-3;
+  }
+
+  .pw-panel-title {
+    @apply text-[0.96rem] font-bold text-brand;
+  }
+
+  .pw-panel-meta {
+    @apply text-[0.78rem] text-text-secondary;
+  }
+
+  .pw-radio-bar {
+    @apply mb-3 border-b border-border pb-2 text-[0.8rem] text-text-secondary;
+  }
+
+  .pw-watchlist {
+    @apply mb-3 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))];
+  }
+
+  .pw-watch-card {
+    @apply rounded-2xl border border-border bg-surface-2/95 p-3;
+  }
+
+  .pw-watch-card-empty {
+    @apply grid min-h-24 items-center justify-items-start gap-1 rounded-2xl border border-dashed border-border-strong bg-surface-2/60 p-4 text-[0.9rem] text-text-secondary;
+  }
+
+  .pw-watch-empty-title {
+    @apply text-[0.96rem] font-bold text-text-primary;
+  }
+
+  .pw-watch-header {
+    @apply mb-2 flex items-center justify-between gap-2;
+  }
+
+  .pw-watch-title {
+    @apply text-[0.95rem] font-bold text-text-primary;
+  }
+
+  .pw-watch-subtitle {
+    @apply text-[0.78rem] text-text-secondary;
+  }
+
+  .pw-watch-metrics {
+    @apply grid grid-cols-3 gap-2;
+  }
+
+  .pw-watch-metric-label {
+    @apply mb-0.5 text-[0.64rem] uppercase tracking-[0.05em] text-text-disabled;
+  }
+
+  .pw-watch-metric-value {
+    @apply text-[0.88rem] font-semibold text-text-primary;
+  }
+
+  .pw-table-shell {
+    @apply mt-1;
+  }
+
+  .pw-snr-bar {
+    @apply mr-2 inline-flex h-2.5 w-20 overflow-hidden rounded-full border border-border bg-surface-3 align-middle;
+  }
+
+  .pw-snr-bar > div {
+    @apply h-full rounded-full bg-success;
+  }
+
+  .pw-snr-bar.warn > div {
+    @apply bg-warning;
+  }
+
+  .pw-snr-bar.bad > div {
+    @apply bg-danger;
+  }
+
+  .pw-action-button {
+    @apply rounded-full border border-border bg-surface-3/90 px-2.5 py-1 text-[0.72rem] font-bold text-text-secondary transition-colors;
+  }
+
+  .pw-action-button:hover,
+  .pw-action-button.is-active {
+    @apply border-brand/60 bg-brand/20 text-brand;
+  }
+
+  .pw-section-count {
+    @apply text-text-secondary;
+  }
+
+  .pw-kv {
+    @apply grid grid-cols-[minmax(0,11rem)_1fr] gap-x-4 gap-y-1.5;
+  }
+
+  .pw-k {
+    @apply text-[0.7rem] uppercase tracking-[0.05em] text-text-secondary;
+  }
+
+  .pw-v {
+    @apply text-[0.9rem] text-text-primary;
+  }
+
+  .pw-k-sep,
+  .pw-v-sep {
+    @apply mt-2 border-t border-border pt-2 text-[0.72rem] font-bold uppercase tracking-[0.08em] text-brand-soft;
+  }
+
+  .pw-controls {
+    @apply rounded-xl border border-border bg-surface-2/70 p-4;
+  }
+
+  .pw-control-grid {
+    @apply grid gap-3 md:grid-cols-2 xl:grid-cols-3;
+  }
+
+  .pw-control-label {
+    @apply block text-[0.7rem] uppercase tracking-[0.05em] text-text-secondary;
+  }
+
+  .pw-control-label span {
+    @apply mb-1.5 block;
+  }
+
+  .pw-control-actions {
+    @apply mt-3 flex items-center gap-3;
+  }
+
+  .pw-button {
+    @apply rounded-full border border-border-strong bg-brand px-4 py-2 text-[0.78rem] font-bold tracking-[0.03em] text-surface-0 transition-colors hover:bg-accent;
+  }
+
+  .pw-control-status {
+    @apply text-[0.8rem] text-text-secondary;
+  }
+
+  .pw-lead {
+    @apply max-w-[64ch] text-[0.95rem] text-text-secondary;
+  }
+
+  .pw-inline-toggle {
+    @apply ml-4 inline-flex items-center gap-2;
+  }
+}

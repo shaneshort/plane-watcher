@@ -1,0 +1,76 @@
+{{define "gps_details"}}<div class="pw-stat-grid">{{range .Stats}}
+  <div class="pw-stat">
+    <div class="pw-stat-label">{{.Label}}</div>
+    <div class="pw-stat-value{{if .Class}} {{.Class}}{{end}}">{{.Value}}</div>
+  </div>{{end}}
+</div>
+<section class="pw-panel-grid">
+  <div class="pw-panel">
+    <div class="pw-panel-head">
+      <div class="pw-panel-title">Receiver</div>
+      <div class="pw-panel-meta">{{.ReceiverAge}}</div>
+    </div>
+    <div class="pw-kv">{{range .Receiver}}
+      <div class="pw-k">{{.Key}}</div>
+      <div class="pw-v{{if .Class}} {{.Class}}{{end}}">{{.Value}}</div>{{end}}
+    </div>
+    {{if .ReceiverErr}}<div class="mt-3 rounded-2xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{{.ReceiverErr}}</div>{{end}}
+  </div>
+  <div class="pw-panel">
+    <div class="pw-panel-head">
+      <div class="pw-panel-title">Location</div>
+      <div class="pw-panel-meta">{{.LocationAge}}</div>
+    </div>
+    <div class="pw-kv">{{range .Location}}
+      <div class="pw-k">{{.Key}}</div>
+      <div class="pw-v{{if .Class}} {{.Class}}{{end}}">{{.Value}}</div>{{end}}
+    </div>
+  </div>
+</section>
+<section class="pw-panel-grid">
+  <div class="pw-panel">
+    <div class="pw-panel-head">
+      <div class="pw-panel-title">Clock and Timing</div>
+      <div class="pw-panel-meta">{{.ClockAge}}</div>
+    </div>
+    <div class="pw-kv">{{range .Clock}}
+      <div class="pw-k">{{.Key}}</div>
+      <div class="pw-v{{if .Class}} {{.Class}}{{end}}">{{.Value}}</div>{{end}}
+    </div>
+    {{if .PeriodicErr}}<div class="mt-3 rounded-2xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{{.PeriodicErr}}</div>{{end}}
+  </div>
+  <div class="pw-panel">
+    <div class="pw-panel-head">
+      <div class="pw-panel-title">PPS Detail</div>
+      <div class="pw-panel-meta">Fine timing</div>
+    </div>
+    <div class="pw-kv">{{range .PPS}}
+      <div class="pw-k">{{.Key}}</div>
+      <div class="pw-v{{if .Class}} {{.Class}}{{end}}">{{.Value}}</div>{{end}}
+    </div>
+  </div>
+</section>
+<h2>Satellites <span class="pw-section-count">{{.SatelliteCount}}</span></h2>
+<div class="pw-radio-bar">{{.SatelliteSummary}}</div>
+<div class="pw-table-shell overflow-x-auto rounded-2xl border border-border bg-surface-1/70">
+  <table id="sats-table">
+    <thead>
+      <tr>
+        <th>PRN</th>
+        <th>GNSS</th>
+        <th class="text-right">Az°</th>
+        <th class="text-right">El°</th>
+        <th>SNR</th>
+        <th>Used</th>
+      </tr>
+    </thead>
+    <tbody>{{range .Satellites}}<tr{{if not .Used}} class="unused"{{end}}>
+      <td>{{.PRN}}</td>
+      <td>{{.GNSS}}</td>
+      <td class="text-right">{{.Az}}</td>
+      <td class="text-right">{{.El}}</td>
+      <td><span class="pw-snr-bar{{if .SNRClass}} {{.SNRClass}}{{end}}"><div style="width:{{.SNRPct}}%"></div></span>{{.SNR}}</td>
+      <td>{{if .Used}}✓{{else}}—{{end}}</td>
+    </tr>{{else}}<tr><td colspan="6" class="text-center text-text-secondary">No satellites</td></tr>{{end}}</tbody>
+  </table>
+</div>{{end}}

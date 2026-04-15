@@ -1,0 +1,24 @@
+{{define "base"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.PageTitle}}</title>
+<link rel="stylesheet" href="/assets/prototype.css">
+</head>
+<body>
+<div class="pw-topbar">
+  <h1>plane-watcher</h1>
+  <div class="pw-build-chip">{{.BuildChip}}</div>
+</div>
+<nav class="pw-page-nav">
+  <a href="/"{{if eq .ActivePage "dashboard"}} class="active"{{end}}>Dashboard</a>
+  <a href="/gps"{{if eq .ActivePage "gps"}} class="active"{{end}}>GPS</a>
+  <a href="/receiver"{{if eq .ActivePage "receiver"}} class="active"{{end}}>Receiver</a>
+  <a href="/diagnostics"{{if eq .ActivePage "diagnostics"}} class="active"{{end}}>Diagnostics</a>
+</nav>
+<div id="error" class="mb-3 hidden rounded-2xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert" aria-live="assertive"></div>
+{{.Content}}
+</body>
+</html>
+{{end}}

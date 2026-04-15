@@ -1,0 +1,18 @@
+:root {
+  --color-surface-0: 9 10 12;
+  --color-surface-1: 18 19 23;
+  --color-surface-2: 28 30 36;
+  --color-surface-3: 39 41 48;
+  --color-text-primary: 239 234 224;
+  --color-text-secondary: 180 173 158;
+  --color-text-disabled: 118 113 102;
+  --color-brand: 242 185 32;
+  --color-brand-soft: 163 123 24;
+  --color-accent: 255 211 92;
+  --color-success: 91 214 122;
+  --color-warning: 255 196 59;
+  --color-danger: 244 78 78;
+  --color-border-subtle: 55 48 34;
+  --color-border-strong: 104 87 44;
+  --color-focus: 255 211 92;
+}

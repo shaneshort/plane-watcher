@@ -1,0 +1,15 @@
+{{define "dashboard_watchlist"}}<h2>Watchlist <span class="pw-section-count">{{if .Count}}{{.Count}}{{end}}</span></h2>
+<div class="pw-watchlist">{{if .Cards}}{{range .Cards}}<div class="pw-watch-card">
+  <div class="pw-watch-header">
+    <div>
+      <div class="pw-watch-title">{{.Title}}</div>
+      <div class="pw-watch-subtitle">{{.Subtitle}}</div>
+    </div>
+    <button type="button" class="pw-action-button is-active" data-icao="{{.ICAO}}" data-action="toggle-beacon">Beacon</button>
+  </div>{{if .Visible}}
+  <div class="pw-watch-metrics">
+    <div><div class="pw-watch-metric-label">Signal</div><div class="pw-watch-metric-value">{{.Signal}}</div></div>
+    <div><div class="pw-watch-metric-label">Messages</div><div class="pw-watch-metric-value">{{.Messages}}</div></div>
+    <div><div class="pw-watch-metric-label">Seen</div><div class="pw-watch-metric-value">{{.Age}}</div></div>
+  </div>{{end}}
+</div>{{end}}{{else}}<div class="pw-watch-card-empty"><div class="pw-watch-empty-title">No beacons pinned yet</div><div>Use the action column in the aircraft table to pin a nearby aircraft or known beacon for ongoing monitoring.</div></div>{{end}}</div>{{end}}

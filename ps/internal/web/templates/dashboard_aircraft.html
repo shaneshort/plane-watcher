@@ -1,0 +1,26 @@
+{{define "dashboard_aircraft"}}<h2>Aircraft <span class="pw-section-count">{{if .Count}}{{.Count}}{{end}}</span></h2>
+<div class="pw-table-shell overflow-x-auto rounded-2xl border border-border bg-surface-1/70">
+  <table>
+    <thead>
+      <tr>
+        <th>ICAO</th><th>Callsign</th><th>Squawk</th>
+        <th class="text-right">Altitude</th><th class="text-right">Dist</th>
+        <th class="text-right">Lat</th><th class="text-right">Lon</th>
+        <th class="text-right">Sig</th><th class="text-right">Msgs</th><th class="text-right">Age</th><th class="text-right">Beacon</th>
+      </tr>
+    </thead>
+    <tbody>{{if .Rows}}{{range .Rows}}<tr>
+      <td>{{.ICAO}}</td>
+      <td>{{.Callsign}}</td>
+      <td>{{.Squawk}}</td>
+      <td class="text-right">{{.Altitude}}</td>
+      <td class="text-right">{{.Distance}}</td>
+      <td class="text-right">{{.Lat}}</td>
+      <td class="text-right">{{.Lon}}</td>
+      <td class="text-right">{{.Signal}}</td>
+      <td class="text-right">{{.Messages}}</td>
+      <td class="text-right">{{.Age}}</td>
+      <td class="text-right"><button type="button" class="pw-action-button{{if .Pinned}} is-active{{end}}" data-icao="{{.ICAO}}" data-action="toggle-beacon">{{if .Pinned}}Beacon{{else}}Pin{{end}}</button></td>
+    </tr>{{end}}{{else}}<tr><td colspan="11" class="text-center text-text-secondary">No aircraft</td></tr>{{end}}</tbody>
+  </table>
+</div>{{end}}

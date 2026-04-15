@@ -1,0 +1,39 @@
+<section class="mb-3 rounded-2xl border border-border bg-gradient-to-b from-surface-2/95 to-surface-1/95 p-4">
+  <div class="mb-1 text-[0.74rem] font-bold uppercase tracking-[0.14em] text-brand-soft">Engineering View</div>
+  <div class="max-w-[56rem] text-[1rem] font-semibold text-text-primary">Raw counters, rejected frames, and timing internals live here when the box needs to explain odd behaviour.</div>
+  <p class="mt-2 max-w-[64rem] text-sm text-text-secondary">This page is for answering “why did the receiver just do that?” Keep it dense, clear, and useful, not dressed up like a status dashboard.</p>
+</section>
+
+<div id="diagnostics-summary-fragment"></div>
+<div id="diagnostics-drops-fragment"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  const REFRESH_INTERVAL_MS = 2000;
+  const errorBanner = document.getElementById('error');
+
+  async function refreshFragment(targetId, url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(url + ' HTTP ' + response.status);
+    document.getElementById(targetId).innerHTML = await response.text();
+  }
+
+  async function refreshAll() {
+    try {
+      errorBanner.classList.add('hidden');
+      await Promise.all([
+        refreshFragment('diagnostics-summary-fragment', '/partials/diagnostics/summary'),
+        refreshFragment('diagnostics-drops-fragment', '/partials/diagnostics/drops'),
+      ]);
+    } catch (err) {
+      errorBanner.textContent = 'Connection lost: ' + err.message;
+      errorBanner.classList.remove('hidden');
+    }
+  }
+
+  setInterval(refreshAll, REFRESH_INTERVAL_MS);
+  refreshAll();
+})();
+</script>
