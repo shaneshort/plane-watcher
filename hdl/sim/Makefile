@@ -38,6 +38,8 @@ RTL_SRCS = \
 	$(RTL_DIR)/iq_to_power.vhd \
 	$(RTL_DIR)/power_downsampler.vhd \
 	$(RTL_DIR)/vendor_rx_ingress.vhd \
+	$(RTL_DIR)/ad9238_ingress.vhd \
+	$(RTL_DIR)/log_to_linear.vhd \
 	$(RTL_DIR)/axi_regs.vhd \
 	$(RTL_DIR)/adsb_top.vhd \
 	$(RTL_DIR)/adsb_pl_wrapper.vhd
@@ -49,7 +51,9 @@ TB_SRCS = \
 	$(TB_DIR)/async_sample_fifo_tb.vhd \
 	$(TB_DIR)/edge_detector_probe_tb.vhd \
 	$(TB_DIR)/adsb_decoder_tb.vhd \
-	$(TB_DIR)/axi_regs_tb.vhd
+	$(TB_DIR)/axi_regs_tb.vhd \
+	$(TB_DIR)/ad9238_ingress_tb.vhd \
+	$(TB_DIR)/log_to_linear_tb.vhd
 
 .PHONY: all analyse clean vectors vectors-dir sim_crc sim_timestamp sim_all
 
@@ -82,6 +86,14 @@ sim_sample_fifo: analyse
 sim_edge_probe: analyse
 	$(GHDL) -e $(GHDL_FLAGS) edge_detector_probe_tb
 	$(GHDL) -r $(GHDL_FLAGS) edge_detector_probe_tb --wave=$(WAVE_DIR)/edge_probe.ghw
+
+sim_ad9238: analyse
+	$(GHDL) -e $(GHDL_FLAGS) ad9238_ingress_tb
+	$(GHDL) -r $(GHDL_FLAGS) ad9238_ingress_tb --wave=$(WAVE_DIR)/ad9238.ghw
+
+sim_log_lut: analyse
+	$(GHDL) -e $(GHDL_FLAGS) log_to_linear_tb
+	$(GHDL) -r $(GHDL_FLAGS) log_to_linear_tb --wave=$(WAVE_DIR)/log_lut.ghw
 
 sim_decoder: analyse vectors
 	$(GHDL) -e $(GHDL_FLAGS) adsb_decoder_tb
