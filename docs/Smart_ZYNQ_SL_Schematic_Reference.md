@@ -1,0 +1,1068 @@
+# Smart ZYNQ SL — Schematic Reference (V1.3B)
+
+> Extracted from: `SmartZynq_SL_Schematic_V1d3B_20260413.pdf`
+> Date: April 13, 2026 | Revision: 1.3B
+> Source: hellofpga.com
+
+This document is a complete, structured text rendering of the Smart ZYNQ SL schematic, intended as a reference for use with Vivado, Claude Code, and other tools. It covers all signal-to-pin mappings, net names, power rails, and ready-to-use XDC constraint blocks.
+
+---
+
+## Table of Contents
+
+1. [Block Diagram Summary](#1-block-diagram-summary)
+2. [Version Differences — Version-Specific Notes](#2-version-differences)
+3. [Power Rails](#3-power-rails)
+4. [ZYNQ XC7Z020 — Pin Assignments by Function](#4-zynq-xc7z020-pin-assignments-by-function)
+   - 4.1 [BANK 0 — Configuration & JTAG](#41-bank-0--configuration--jtag)
+   - 4.2 [BANK 13 — RGB LCD (V1.3B only)](#42-bank-13--rgb-lcd-v13b-only)
+   - 4.3 [BANK 33 — GPIO Header J6 (VADJ, default 3.3V)](#43-bank-33--gpio-header-j6-vadj-default-33v)
+   - 4.4 [BANK 34 — Internal Functions (ETH, HDMI, UART, LED, KEY, EEPROM, CLK)](#44-bank-34--internal-functions)
+   - 4.5 [BANK 35 — GPIO Header J5 (3.3V fixed)](#45-bank-35--gpio-header-j5-33v-fixed)
+   - 4.6 [BANK 500 — PS MIO (QSPI, UART, TF Card, Clock)](#46-bank-500--ps-mio)
+   - 4.7 [BANK 501 — PS MIO (Extended)](#47-bank-501--ps-mio-extended)
+   - 4.8 [BANK 502 — PS DDR](#48-bank-502--ps-ddr)
+5. [Peripheral Subsystems](#5-peripheral-subsystems)
+   - 5.1 [Ethernet — RTL8211E (RGMII)](#51-ethernet--rtl8211e-rgmii)
+   - 5.2 [HDMI Output (IO-Simulated TMDS)](#52-hdmi-output-io-simulated-tmds)
+   - 5.3 [UART — CH340N USB-UART Bridge](#53-uart--ch340n-usb-uart-bridge)
+   - 5.4 [QSPI Flash — W25Q128](#54-qspi-flash--w25q128)
+   - 5.5 [TF Card (microSD)](#55-tf-card-microsd)
+   - 5.6 [EEPROM — 24C02](#56-eeprom--24c02)
+   - 5.7 [DDR3 Memory — MT41K256M16](#57-ddr3-memory--mt41k256m16)
+   - 5.8 [Clocks](#58-clocks)
+   - 5.9 [Buttons & LEDs](#59-buttons--leds)
+   - 5.10 [RGB LCD FPC Connector J35 (V1.3B only)](#510-rgb-lcd-fpc-connector-j35-v13b-only)
+   - 5.11 [JTAG Header J15](#511-jtag-header-j15)
+   - 5.12 [Boot Mode DIP Switches S1 & S2](#512-boot-mode-dip-switches-s1--s2)
+6. [GPIO Headers — Full Pin Tables](#6-gpio-headers--full-pin-tables)
+   - 6.1 [J5 — BANK 35 (3.3V, 40-pin)](#61-j5--bank-35-33v-40-pin)
+   - 6.2 [J6 — BANK 33 (VADJ, 40-pin)](#62-j6--bank-33-vadj-40-pin)
+7. [Ready-to-Use Vivado XDC Constraints](#7-ready-to-use-vivado-xdc-constraints)
+   - 7.1 [Onboard Peripherals (CLK, UART, LEDs, Keys, EEPROM)](#71-onboard-peripherals)
+   - 7.2 [Gigabit Ethernet RGMII](#72-gigabit-ethernet-rgmii)
+   - 7.3 [HDMI — Version-Specific](#73-hdmi--version-specific)
+   - 7.4 [J5 Header (BANK 35, LVCMOS33)](#74-j5-header-bank-35-lvcmos33)
+   - 7.5 [J6 Header (BANK 33, LVCMOS33)](#75-j6-header-bank-33-lvcmos33)
+   - 7.6 [RGB LCD FPC (V1.3B only, BANK 13)](#76-rgb-lcd-fpc-v13b-only-bank-13)
+
+---
+
+## 1. Block Diagram Summary
+
+```
++------------------------------------------------------+
+|                   Smart ZYNQ SL                      |
+|                                                      |
+|  +-----------------------------------------+        |
+|  |       XILINX ZYNQ XC7Z020-CLG484         |        |
+|  |                                          |        |
+|  |  PS (ARM Cortex-A9)   PL (FPGA Fabric)  |        |
+|  |  - DDR Controller     - BANK 13 (LCD)   |        |
+|  |  - BANK 500 (MIO)     - BANK 33 (J6)    |        |
+|  |  - BANK 501 (MIO)     - BANK 34 (periph)|        |
+|  |  - BANK 502 (DDR)     - BANK 35 (J5)    |        |
+|  +-----------------------------------------+        |
+|       |              |                              |
+|  [DDR3 512MB]   [QSPI 16MB]  [EEPROM 2kbit]        |
+|                                                      |
+|  [GigE RTL8211E]  [HDMI out]  [USB-UART CH340N]     |
+|  [MicroSD slot]   [50MHz PL]  [33.33MHz PS]         |
+|  [2x KEY]  [2x LED]  [POR reset]  [Boot DIP SW]     |
+|  [J5: 34x GPIO BANK35 3.3V]                         |
+|  [J6: 34x GPIO BANK33 VADJ]                         |
+|  [J35: 35x GPIO RGB LCD FPC — V1.3B ONLY]           |
++------------------------------------------------------+
+```
+
+**Key principle:** SP/SP2 and SL share the same PL GPIO pin routing and net names. Programs are cross-compatible except for USB HOST/SLAVE and onboard LCD which only exist on SP/SP2.
+
+---
+
+## 2. Version Differences
+
+| Feature | V1.0 / V1.1 | V1.2 | V1.3 | V1.3B |
+|---|---|---|---|---|
+| Header power pin layout | Original | Adjusted ⚠️ | Same as V1.2 | Same as V1.2 |
+| J5/J6 pin-compatible with V1.0/V1.1 | ✅ | ❌ | ❌ | ❌ |
+| Power IC | TPS563201 | TPS563210A | TPS563210A | TPS563210A |
+| HDMI CLK pin | N22 | N22 | N19 (SRCC) | N19 (SRCC) |
+| HDMI SDA / SCL / RX_HPD signals | ❌ | ❌ | ✅ (K20/K19/L19) | ✅ |
+| RGB LCD FPC connector J35 | ❌ | ❌ | ❌ | ✅ (BANK 13) |
+
+> ⚠️ **V1.2/V1.3/V1.3B headers are NOT pin-compatible with V1.0/V1.1.**
+
+---
+
+## 3. Power Rails
+
+| Rail | Voltage | Generated By | Supplied To |
+|---|---|---|---|
+| `5V_DC` | 5 V | USB Type-C / VCC header pin | Input rail |
+| `VCC3V3` | 3.3 V | TPS563210A (U43) from 5V | Most digital logic, IO banks, PHY, flash |
+| `VCC1V8` | 1.8 V | TPS563210A (U41) from 5V | ZYNQ VCCAUX, PS logic |
+| `VCC1V5` | 1.5 V | TPS563210A (U42) from 5V | DDR3 VDDQ |
+| `VCC1V0` | 1.0 V | TPS563210A (U40) from 5V | ZYNQ VCCINT, Ethernet AVDD10/DVDD10 |
+| `VCCIO_ADJ` | 3.3 V (default) | Resistor divider RA/RB on PCB back | BANK 33 VCCO (adjustable) |
+| `DDR3_VREF` | 0.75 V (VCC1V5/2) | Resistor divider | DDR3 VREF |
+| `DVDD33` | 3.3 V | VCC3V3 | Ethernet RTL8211E digital 3.3V |
+| `AVDD33` | 3.3 V | VCC3V3 | Ethernet RTL8211E analog 3.3V |
+| `DVDD10` | 1.0 V | VCC1V0 | Ethernet RTL8211E digital 1.0V |
+| `AVDD10` | 1.0 V | VCC1V0 | Ethernet RTL8211E analog 1.0V |
+
+### VCCIO_ADJ Resistor Table (RA/RB on PCB back, near KEY1)
+
+| Target Voltage | RA | RB |
+|---|---|---|
+| 3.3 V (default) | 33 kΩ | 10 kΩ |
+| 2.5 V | 22.6 kΩ | 10 kΩ |
+| 1.8 V | 13.7 kΩ | 10 kΩ |
+
+### Power Good (PG) Signals
+
+| Signal | Source Rail |
+|---|---|
+| `PG_3V3` | TPS563210A U43 PG output |
+| `PG_1V8` | TPS563210A U41 PG output |
+| `PG_1V5` | TPS563210A U42 PG output |
+| `PG_1V0` | TPS563210A U40 PG output |
+| `PG_ALL` | AND of all PG signals → FPGA DONE / enable gate |
+
+---
+
+## 4. ZYNQ XC7Z020 — Pin Assignments by Function
+
+### 4.1 BANK 0 — Configuration & JTAG
+
+| Net Name | ZYNQ Pin | Function |
+|---|---|---|
+| `DONE_0` | T12 | Configuration done indicator |
+| `INIT_B_0` | T14 | Initialization |
+| `PROGRAM_B_0` | T11 | Program button |
+| `CFGBVS_0` | T13 | Config bank voltage select |
+| `TCK_0` | G11 | JTAG clock |
+| `TDI_0` | H13 | JTAG data in |
+| `TDO_0` | G14 | JTAG data out |
+| `TMS_0` | G12 | JTAG mode select |
+| `FPGA_TCK` | G11 | → JTAG header J15 |
+| `FPGA_TDI` | H13 | → JTAG header J15 |
+| `FPGA_TDO` | G14 | → JTAG header J15 |
+| `FPGA_TMS` | G12 | → JTAG header J15 |
+| `VREFP_0` | M11 | ADC reference positive |
+| `VREFN_0` | L12 | ADC reference negative |
+| `VP_0` | L11 | XADC VP dedicated analog input |
+| `VN_0` | M12 | XADC VN dedicated analog input |
+| `DXP_0` | N11 | Thermal diode+ |
+| `DXN_0` | N12 | Thermal diode- |
+
+---
+
+### 4.2 BANK 13 — RGB LCD (V1.3B only)
+
+All BANK 13 pins are routed to the J35 40-pin FPC connector. IOSTANDARD: LVCMOS33.
+
+| Net Name | ZYNQ Pin | LCD Signal |
+|---|---|---|
+| `GPIO_V10_L1P` | V10 | RGB_LCD_R6 |
+| `GPIO_V9_L1N` | V9 | RGB_LCD_HSYNC |
+| `GPIO_V8_L2P` | V8 | RGB_LCD_G1 |
+| `GPIO_W8_L2N` | W8 | RGB_LCD_G4 |
+| `GPIO_W11_L3P` | W11 | (unassigned) |
+| `GPIO_W10_L3N` | W10 | (unassigned) |
+| `GPIO_V12_L4P` | V12 | (unassigned) |
+| `GPIO_W12_L4N` | W12 | (unassigned) |
+| `GPIO_U12_L5P` | U12 | (unassigned) |
+| `GPIO_U11_L5N` | U11 | (unassigned) |
+| `GPIO_U10_L6P` | U10 | RGB_LCD_R4 |
+| `GPIO_U9_L6N` | U9 | (unassigned) |
+| `GPIO_AA12_L7P` | AA12 | RGB_LCD_R1 |
+| `GPIO_AB12_L7N` | AB12 | RGB_LCD_R5 |
+| `GPIO_AA11_L8P` | AA11 | (unassigned) |
+| `GPIO_AB11_L8N` | AB11 | (unassigned) |
+| `GPIO_AB10_L9P` | AB10 | RGB_LCD_G7 |
+| `GPIO_AB9_L9N` | AB9 | RGB_LCD_G0 |
+| `GPIO_Y11_L10P` | Y11 | (unassigned) |
+| `GPIO_Y10_L10N` | Y10 | (unassigned) |
+| `GPIO_AA9_L11P` | AA9 | RGB_LCD_G6 |
+| `GPIO_AA8_L11N` | AA8 | RGB_LCD_R3 |
+| `GPIO_Y9_L12P` | Y9 | RGB_LCD_G5 |
+| `GPIO_Y8_L12N` | Y8 | RGB_LCD_G3 |
+| `GPIO_Y6_L13P` | Y6 | RGB_LCD_G2 |
+| `GPIO_Y5_L13N` | Y5 | RGB_LCD_B0 |
+| `GPIO_AA7_L14P` | AA7 | RGB_LCD_B2 |
+| `GPIO_AA6_L14N` | AA6 | RGB_LCD_DE |
+| `GPIO_AB2_L15P` | AB2 | RGB_LCD_VSYNC |
+| `GPIO_AB1_L15N` | AB1 | RGB_LCD_TP_SDA |
+| `GPIO_AB5_L16P` | AB5 | RGB_LCD_B6 |
+| `GPIO_AB4_L16N` | AB4 | RGB_LCD_B5 |
+| `GPIO_AB7_L17P` | AB7 | RGB_LCD_R2 |
+| `GPIO_AB6_L17N` | AB6 | RGB_LCD_B4 |
+| `GPIO_Y4_L18P` | Y4 | RGB_LCD_R7 |
+| `GPIO_AA4_L18N` | AA4 | RGB_LCD_CLK |
+| `GPIO_R6_L19P` | R6 | (unassigned) |
+| `GPIO_T6_L19N` | T6 | (unassigned) |
+| `GPIO_T4_L20P` | T4 | (unassigned) |
+| `GPIO_U4_L20N` | U4 | RGB_LCD_TP_INT |
+| `GPIO_V5_L21P` | V5 | RGB_LCD_RESERVE |
+| `GPIO_V4_L21N` | V4 | RGB_LCD_B1 |
+| `GPIO_U6_L22P` | U6 | RGB_LCD_TP_RES |
+| `GPIO_U5_L22N` | U5 | RGB_LCD_TP_SCL |
+| `GPIO_V7_L23P` | V7 | RGB_LCD_R0 |
+| `GPIO_W7_L23N` | W7 | RGB_LCD_B3 |
+| `GPIO_W6_L24P` | W6 | RGB_LCD_B7 |
+| `GPIO_W5_L24N` | W5 | RGB_LCD_RST |
+| `GPIO_U7` | U7 | RGB_LCD_BL (backlight) |
+| `GPIO_R7` | R7 | (unassigned / IO_0_13) |
+
+---
+
+### 4.3 BANK 33 — GPIO Header J6 (VADJ, default 3.3V)
+
+VCCO = VCCIO_ADJ (default 3.3V, adjustable via RA/RB resistors).
+
+| Net Name | ZYNQ Pin | Diff Pair | J6 Header Pin |
+|---|---|---|---|
+| `GPIO_U19` | U19 | IO_0_33 | — (single-ended) |
+| `GPIO_T21_L1P` | T21 | L1P | J6[0] / pin 1 |
+| `GPIO_U21_L1N` | U21 | L1N | J6[1] / pin 2 |
+| `GPIO_T22_L2P` | T22 | L2P | J6[2] / pin 3 |
+| `GPIO_U22_L2N` | U22 | L2N | J6[3] / pin 4 (see XDC) |
+| `GPIO_V22_L3P` | V22 | L3P | — |
+| `GPIO_W22_L3N` | W22 | L3N | — |
+| `GPIO_W20_L4P` | W20 | L4P | — |
+| `GPIO_W21_L4N` | W21 | L4N | — |
+| `GPIO_U20_L5P` | U20 | L5P | — |
+| `GPIO_V20_L5N` | V20 | L5N | — |
+| `GPIO_V18_L6P` | V18 | L6P | — |
+| `GPIO_V19_L6N` | V19 | L6N | — |
+| `GPIO_AA22_L7P` | AA22 | L7P | — |
+| `GPIO_AB22_L7N` | AB22 | L7N | — |
+| `GPIO_AA21_L8P` | AA21 | L8P | — |
+| `GPIO_AB21_L8N` | AB21 | L8N | — |
+| `GPIO_Y20_L9P` | Y20 | L9P | — |
+| `GPIO_Y21_L9N` | Y21 | L9N | — |
+| `GPIO_AB19_L10P` | AB19 | L10P | — |
+| `GPIO_AB20_L10N` | AB20 | L10N | — |
+| `GPIO_Y19_L11P` | Y19 | L11P | — |
+| `GPIO_AA19_L11N` | AA19 | L11N | — |
+| `GPIO_Y18_L12P` | Y18 | L12P | — |
+| `GPIO_AA18_L12N` | AA18 | L12N | — |
+| `GPIO_W17_L13P` | W17 | L13P | — |
+| `GPIO_W18_L13N` | W18 | L13N | — |
+| `GPIO_W16_L14P` | W16 | L14P | — |
+| `GPIO_Y16_L14N` | Y16 | L14N | — |
+| `GPIO_U15_L15P` | U15 | L15P | — |
+| `GPIO_U16_L15N` | U16 | L15N | — |
+| `GPIO_U17_L16P` | U17 | L16P | — |
+| `GPIO_V17_L16N` | V17 | L16N | — |
+| `GPIO_AA17_L17P` | AA17 | L17P | — |
+| `GPIO_AB17_L17N` | AB17 | L17N | — |
+| `GPIO_AA16_L18P` | AA16 | L18P | — |
+| `GPIO_AB16_L18N` | AB16 | L18N | — |
+| `GPIO_V14_L19P` | V14 | L19P | — |
+| `GPIO_V15_L19N` | V15 | L19N | — |
+| `GPIO_V13_L20P` | V13 | L20P | — |
+| `GPIO_W13_L20N` | W13 | L20N | — |
+| `GPIO_W15_L21P` | W15 | L21P | — |
+| `GPIO_Y15_L21N` | Y15 | L21N | — |
+| `GPIO_Y14_L22P` | Y14 | L22P | — |
+| `GPIO_AA14_L22N` | AA14 | L22N | — |
+| `GPIO_Y13_L23P` | Y13 | L23P | — |
+| `GPIO_AA13_L23N` | AA13 | L23N | — |
+| `GPIO_AB14_L24P` | AB14 | L24P | — |
+| `GPIO_AB15_L24N` | AB15 | L24N | — |
+| `GPIO_U14` | U14 | IO_25_33 | — (single-ended) |
+
+---
+
+### 4.4 BANK 34 — Internal Functions
+
+These pins are **not** routed to user headers. They connect to onboard peripherals.
+
+| Net Name | ZYNQ Pin | Function |
+|---|---|---|
+| `GPIO_H15` | H15 | IO_0_34 (single-ended) |
+| `GPIO_J15_L1P` | J15 | Header GPIO |
+| `GPIO_K15_L1N` | K15 | Header GPIO |
+| `GPIO_J16_L2P` | J16 | Header GPIO |
+| `GPIO_J17_L2N` | J17 | Header GPIO |
+| `GPIO_K16_L3P` | K16 | Header GPIO |
+| `GPIO_L16_L3N` | L16 | Header GPIO |
+| `GPIO_L17_L4P` | L17 | **PL_UART_TX** (→ CH340N RX) |
+| `GPIO_M17_L4N` | M17 | **PL_UART_RX** (→ CH340N TX) |
+| `GPIO_N17_L5P` | N17 | Header GPIO |
+| `GPIO_N18_L5N` | N18 | Header GPIO |
+| `GPIO_M15_L6P` | M15 | Header GPIO |
+| `GPIO_M16_L6N` | M16 | Header GPIO |
+| `GPIO_J18_L7P` | J18 | Header GPIO |
+| `GPIO_K18_L7N` | K18 | Header GPIO |
+| `GPIO_J20_L9P` | J20 | **KEY2** |
+| `GPIO_K21_L9N` | K21 | **KEY1** |
+| `GPIO_K19_L11P` | K19 | **HDMI_SCL** (V1.3/V1.3B only) |
+| `GPIO_K20_L11N` | K20 | **HDMI_SDA** (V1.3/V1.3B only) |
+| `GPIO_L18_L12P` | L18 | Header GPIO |
+| `GPIO_L19_L12N` | L19 | **HDMI_RX_HPD_OUT** (V1.3/V1.3B only) |
+| `GPIO_M19_L13P` | M19 | **CLK_50M** (50 MHz PL clock input) |
+| `GPIO_M20_L13N` | M20 | Header GPIO |
+| `GPIO_N19_L14P` | N19 | **HDMI_TMDS_CLK_P** (V1.3/V1.3B) |
+| `GPIO_N20_L14N` | N20 | **HDMI_TMDS_CLK_N** (V1.3/V1.3B) |
+| `GPIO_N22_L16P` | N22 | **HDMI_TMDS_CLK_P** (V1.0/V1.1/V1.2) |
+| `GPIO_P22_L16N` | P22 | **HDMI_TMDS_CLK_N** (V1.0/V1.1/V1.2) |
+| `GPIO_R20_L17P` | R20 | **EEPROM_SCL** |
+| `GPIO_R21_L17N` | R21 | **EEPROM_SDA** |
+| `GPIO_P20_L18P` | P20 | **LED1** |
+| `GPIO_P21_L18N` | P21 | **LED2** |
+| `GPIO_N15_L19P` | N15 | Header GPIO |
+| `GPIO_P15_L19N` | P15 | Header GPIO |
+| `GPIO_P17_L20P` | P17 | Header GPIO |
+| `GPIO_P18_L20N` | P18 | Header GPIO |
+| `GPIO_T16_L21P` | T16 | Header GPIO |
+| `GPIO_T17_L21N` | T17 | Header GPIO |
+| `GPIO_R19_L22P` | R19 | Header GPIO |
+| `GPIO_T19_L22N` | T19 | Header GPIO |
+| `GPIO_R18_L23P` | R18 | Header GPIO |
+| `GPIO_T18_L23N` | T18 | Header GPIO |
+| `GPIO_P16_L24P` | P16 | Header GPIO |
+| `GPIO_R16_L24N` | R16 | Header GPIO |
+| `GPIO_R15` | R15 | IO_25_34 (single-ended) |
+| `GPIO_J21_L8P` | J21 | **HDMI_TMDS_DAT2_P** |
+| `GPIO_J22_L8N` | J22 | **HDMI_TMDS_DAT2_N** |
+| `GPIO_L21_L10P` | L21 | **HDMI_TMDS_DAT1_P** |
+| `GPIO_L22_L10N` | L22 | **HDMI_TMDS_DAT1_N** |
+| `GPIO_M21_L15P` | M21 | **HDMI_TMDS_DAT0_P** |
+| `GPIO_M22_L15N` | M22 | **HDMI_TMDS_DAT0_N** |
+
+#### Ethernet — BANK 34/35 pins
+
+| Net Name | ZYNQ Pin | ETH Signal |
+|---|---|---|
+| `GPIO_H17` | H17 | ETH_RST (RTL8211E PHYRSTB) |
+| `GPIO_H18` | H18 | ETH_INT (RTL8211E INTB) |
+| `GPIO_A22_L15N` | A22 | **ETH_RXD0** (RGMII_rd[0]) |
+| `GPIO_A18_L10P` | A18 | **ETH_RXD1** (RGMII_rd[1]) |
+| `GPIO_A19_L10N` | A19 | **ETH_RXD2** (RGMII_rd[2]) |
+| `GPIO_B20_L13N` | B20 | **ETH_RXD3** (RGMII_rd[3]) |
+| `GPIO_A21_L15P` | A21 | **ETH_RXCTL** (RGMII_rx_ctl) |
+| `GPIO_B19_L13P` | B19 | **ETH_RXC** (RGMII_rxc) |
+| `GPIO_E21_L17P` | E21 | **ETH_TXD0** (RGMII_td[0]) |
+| `GPIO_F21_L23P` | F21 | **ETH_TXD1** (RGMII_td[1]) |
+| `GPIO_F22_L23N` | F22 | **ETH_TXD2** (RGMII_td[2]) |
+| `GPIO_G20_L22P` | G20 | **ETH_TXD3** (RGMII_td[3]) |
+| `GPIO_G22_L24N` | G22 | **ETH_TXCTL** (RGMII_tx_ctl) |
+| `GPIO_D21_L17N` | D21 | **ETH_TXC** (RGMII_txc) |
+| `GPIO_H22_L24P` | H22 | **ETH_MDIO** |
+| `GPIO_G21_L22N` | G21 | **ETH_MDC** |
+
+---
+
+### 4.5 BANK 35 — GPIO Header J5 (3.3V fixed)
+
+VCCO = VCC3V3 (fixed 3.3V). All 34 user GPIO plus power/GND rows on 40-pin header J5.
+
+| Net Name | ZYNQ Pin | Diff Pair |
+|---|---|---|
+| `GPIO_F16_L1P` | F16 | L1P |
+| `GPIO_E16_L1N` | E16 | L1N |
+| `GPIO_D16_L2P` | D16 | L2P |
+| `GPIO_D17_L2N` | D17 | L2N |
+| `GPIO_E15_L3P` | E15 | L3P |
+| `GPIO_D15_L3N` | D15 | L3N |
+| `GPIO_G15_L4P` | G15 | L4P |
+| `GPIO_G16_L4N` | G16 | L4N |
+| `GPIO_F18_L5P` | F18 | L5P |
+| `GPIO_E18_L5N` | E18 | L5N |
+| `GPIO_G17_L6P` | G17 | L6P |
+| `GPIO_F17_L6N` | F17 | L6N |
+| `GPIO_C15_L7P` | C15 | L7P |
+| `GPIO_B15_L7N` | B15 | L7N |
+| `GPIO_B16_L8P` | B16 | L8P |
+| `GPIO_B17_L8N` | B17 | L8N |
+| `GPIO_A16_L9P` | A16 | L9P |
+| `GPIO_A17_L9N` | A17 | L9N |
+| `GPIO_A18_L10P` | A18 | L10P (ETH_RXD1) |
+| `GPIO_A19_L10N` | A19 | L10N (ETH_RXD2) |
+| `GPIO_C17_L11P` | C17 | L11P |
+| `GPIO_C18_L11N` | C18 | L11N |
+| `GPIO_D18_L12P` | D18 | L12P |
+| `GPIO_C19_L12N` | C19 | L12N |
+| `GPIO_B19_L13P` | B19 | L13P (ETH_RXC) |
+| `GPIO_B20_L13N` | B20 | L13N (ETH_RXD3) |
+| `GPIO_D20_L14P` | D20 | L14P |
+| `GPIO_C20_L14N` | C20 | L14N |
+| `GPIO_A21_L15P` | A21 | L15P (ETH_RXCTL) |
+| `GPIO_A22_L15N` | A22 | L15N (ETH_RXD0) |
+| `GPIO_D22_L16P` | D22 | L16P |
+| `GPIO_C22_L16N` | C22 | L16N |
+| `GPIO_E21_L17P` | E21 | L17P (ETH_TXD0) |
+| `GPIO_D21_L17N` | D21 | L17N (ETH_TXC) |
+| `GPIO_B21_L18P` | B21 | L18P |
+| `GPIO_B22_L18N` | B22 | L18N |
+| `GPIO_H19_L19P` | H19 | L19P |
+| `GPIO_H20_L19N` | H20 | L19N |
+| `GPIO_G19_L20P` | G19 | L20P |
+| `GPIO_F19_L20N` | F19 | L20N |
+| `GPIO_E19_L21P` | E19 | L21P |
+| `GPIO_E20_L21N` | E20 | L21N |
+| `GPIO_G20_L22P` | G20 | L22P (ETH_TXD3) |
+| `GPIO_G21_L22N` | G21 | L22N (ETH_MDC) |
+| `GPIO_F21_L23P` | F21 | L23P (ETH_TXD1) |
+| `GPIO_F22_L23N` | F22 | L23N (ETH_TXD2) |
+| `GPIO_H22_L24P` | H22 | L24P (ETH_MDIO) |
+| `GPIO_G22_L24N` | G22 | L24N (ETH_TXCTL) |
+| `GPIO_H18` | H18 | IO_0_35 (ETH_INT) |
+| `GPIO_H17` | H17 | (ETH_RST) |
+
+---
+
+### 4.6 BANK 500 — PS MIO
+
+| Net Name | ZYNQ Pin | PS MIO | Function |
+|---|---|---|---|
+| `PS_CLK_500` | F7 | PS_CLK | 33.333 MHz PS clock input |
+| `PS_POR_B_500` | B5 | PS_POR_B | Power-on reset |
+| `PS_MIO0_500` | G6 | MIO0 | — |
+| `PS_MIO1_500` | A1 | MIO1 | — |
+| `PS_MIO2_500` | A2 | MIO2 | `SPI_DQ0/MIO2` (QSPI data 0) |
+| `PS_MIO3_500` | F6 | MIO3 | `SPI_DQ1/MIO3` (QSPI data 1) |
+| `PS_MIO4_500` | E4 | MIO4 | `SPI_DQ2/MIO4` (QSPI data 2) |
+| `PS_MIO5_500` | A3 | MIO5 | `SPI_DQ3/MIO5` (QSPI data 3) |
+| `PS_MIO6_500` | A4 | MIO6 | `SPI_SCK/MIO6` (QSPI clock) |
+| `PS_MIO7_500` | D5 | MIO7 | `VCFG0/MIO7` (boot config 0) |
+| `PS_MIO8_500` | E5 | MIO8 | `VCFG1/MIO8` (boot config 1) |
+| `PS_MIO9_500` | C4 | MIO9 | — |
+| `PS_MIO10_500` | G7 | MIO10 | — |
+| `PS_MIO11_500` | B4 | MIO11 | — |
+| `PS_MIO12_500` | C5 | MIO12 | — |
+| `PS_MIO13_500` | A6 | MIO13 | — |
+| `PS_MIO14_500` | B6 | MIO14 | — |
+| `PS_MIO15_500` | E6 | MIO15 | `QSPI_CS` |
+
+---
+
+### 4.7 BANK 501 — PS MIO Extended
+
+| Net Name | ZYNQ Pin | PS MIO | Function |
+|---|---|---|---|
+| `PS_MIO16_501` | D6 | MIO16 | `SD_CLK` |
+| `PS_MIO17_501` | E9 | MIO17 | `SD_CMD` |
+| `PS_MIO18_501` | A7 | MIO18 | `SD_D0` |
+| `PS_MIO19_501` | E10 | MIO19 | `SD_D1` |
+| `PS_MIO20_501` | A8 | MIO20 | `SD_D2` |
+| `PS_MIO21_501` | F11 | MIO21 | `SD_D3` |
+| `PS_MIO22_501` | A14 | MIO22 | `SD_CD` (card detect) |
+| `PS_MIO23_501` | E11 | MIO23 | — |
+| `PS_MIO24_501` | B7 | MIO24 | — |
+| `PS_MIO25_501` | F12 | MIO25 | — |
+| `PS_MIO26_501` | A13 | MIO26 | — |
+| `PS_MIO27_501` | D7 | MIO27 | — |
+| `PS_MIO28_501` | A12 | MIO28 | — |
+| `PS_MIO29_501` | E8 | MIO29 | — |
+| `PS_MIO30_501` | A11 | MIO30 | — |
+| `PS_MIO31_501` | F9 | MIO31 | — |
+| `PS_MIO32_501` | C7 | MIO32 | — |
+| `PS_MIO33_501` | G13 | MIO33 | — |
+| `PS_MIO34_501` | B12 | MIO34 | — |
+| `PS_MIO35_501` | F14 | MIO35 | — |
+| `PS_MIO36_501` | A9 | MIO36 | — |
+| `PS_MIO37_501` | B14 | MIO37 | — |
+| `PS_MIO38_501` | F13 | MIO38 | — |
+| `PS_MIO39_501` | C13 | MIO39 | — |
+| `PS_MIO40_501` | E14 | MIO40 | — |
+| `PS_MIO41_501` | C8 | MIO41 | — |
+| `PS_MIO42_501` | D8 | MIO42 | — |
+| `PS_MIO43_501` | B11 | MIO43 | — |
+| `PS_MIO44_501` | E13 | MIO44 | — |
+| `PS_MIO45_501` | B9 | MIO45 | — |
+| `PS_MIO46_501` | D12 | MIO46 | — |
+| `PS_MIO47_501` | B10 | MIO47 | — |
+| `PS_MIO48_501` | D11 | MIO48 | — |
+| `PS_MIO49_501` | C14 | MIO49 | — |
+| `PS_MIO50_501` | D13 | MIO50 | — |
+| `PS_MIO51_501` | C10 | MIO51 | — |
+| `PS_MIO52_501` | D10 | MIO52 | — |
+| `PS_MIO53_501` | C12 | MIO53 | — |
+| `PS_SRST_B_501` | C9 | PS_SRST_B | Software reset |
+| `PS_MIO_VREF_501` | F8 | PS_MIO_VREF | MIO voltage reference |
+
+---
+
+### 4.8 BANK 502 — PS DDR
+
+Connected to MT41K256M16 (DDR3, 512 MB). See Section 5.7 for full DDR mapping.
+
+Key ZYNQ DDR pin groups: `PS_DDR_DQ[0:31]`, `PS_DDR_DM[0:3]`, `PS_DDR_DQS_P/N[0:3]`, `PS_DDR_A[0:14]`, `PS_DDR_BA[0:2]`, `PS_DDR_CKP/CKN`, `PS_DDR_CKE`, `PS_DDR_CS_B`, `PS_DDR_RAS_B`, `PS_DDR_CAS_B`, `PS_DDR_WE_B`, `PS_DDR_ODT`, `PS_DDR_DRST_B`.
+
+---
+
+## 5. Peripheral Subsystems
+
+### 5.1 Ethernet — RTL8211E (RGMII)
+
+**IC:** U24 RTL8211E-VB-CG (Gigabit PHY)
+**Interface:** RGMII, connected to PL BANK 34/35. Accessible from PS via EMIO.
+**Reference clock:** 25 MHz crystal X4
+
+| Signal | ZYNQ Pin | Direction |
+|---|---|---|
+| RGMII_rxc | B19 | In |
+| RGMII_rd[0] | A22 | In |
+| RGMII_rd[1] | A18 | In |
+| RGMII_rd[2] | A19 | In |
+| RGMII_rd[3] | B20 | In |
+| RGMII_rx_ctl | A21 | In |
+| RGMII_txc | D21 | Out |
+| RGMII_td[0] | E21 | Out |
+| RGMII_td[1] | F21 | Out |
+| RGMII_td[2] | F22 | Out |
+| RGMII_td[3] | G20 | Out |
+| RGMII_tx_ctl | G22 | Out |
+| MDIO_PHY_mdio_io | H22 | Bidir |
+| MDIO_PHY_mdc | G21 | Out |
+| ETH_RST (PHYRSTB) | H17 | Out |
+| ETH_INT | H18 | In |
+| ETH_LED0 | RTL8211E pin 34 | LED output |
+| ETH_LED1 | RTL8211E pin 35 | LED output |
+| ETH_LED2 | RTL8211E pin 32 | LED output |
+
+**SLEW must be set to FAST on all TX pins.**
+
+---
+
+### 5.2 HDMI Output (IO-Simulated TMDS)
+
+**Connector:** J29 standard HDMI type-A
+**Encoding:** IO-simulated TMDS (no dedicated serializer)
+
+| Signal | ZYNQ Pin (V1.0/V1.1/V1.2) | ZYNQ Pin (V1.3/V1.3B) |
+|---|---|---|
+| HDMI_TMDS_CLK_P | N22 | **N19** |
+| HDMI_TMDS_CLK_N | P22 | **N20** |
+| HDMI_TMDS_DAT2_P | J21 | J21 (same) |
+| HDMI_TMDS_DAT2_N | J22 | J22 (same) |
+| HDMI_TMDS_DAT1_P | L21 | L21 (same) |
+| HDMI_TMDS_DAT1_N | L22 | L22 (same) |
+| HDMI_TMDS_DAT0_P | M21 | M21 (same) |
+| HDMI_TMDS_DAT0_N | M22 | M22 (same) |
+| HDMI_SCL | — | K19 (V1.3/V1.3B only) |
+| HDMI_SDA | — | K20 (V1.3/V1.3B only) |
+| HDMI_RX_HPD_OUT | — | L19 (V1.3/V1.3B only) |
+
+AC coupling: 49.9Ω series resistors on all TMDS lines. ESD protection: PUSB3FR4 arrays (U8, U15).
+5V power control for HDMI port via AO3400 MOSFET.
+
+---
+
+### 5.3 UART — CH340N USB-UART Bridge
+
+**IC:** U7 CH340N
+**Connector:** USB Type-C (J14)
+
+| Net | ZYNQ Pin | Direction |
+|---|---|---|
+| `PL_UART_TX` / `CH340_UART_RX` | L17 (BANK34 L4P) | ZYNQ → CH340N |
+| `PL_UART_RX` / `CH340_UART_TX` | M17 (BANK34 L4N) | CH340N → ZYNQ |
+
+USB signals: `USB_DP`, `USB_DN` (shared with second Type-C connector U14 for power).
+
+---
+
+### 5.4 QSPI Flash — W25Q128
+
+**IC:** J2 W25Q128JVSIQTR (128Mbit / 16MB)
+**Connected to:** PS MIO (Bank 500)
+
+| Signal | Net | MIO |
+|---|---|---|
+| CS | `QSPI_CS` | MIO15 |
+| DI/IO0 | `SPI_DQ0/MIO2` | MIO2 |
+| DO/IO1 | `SPI_DQ1/MIO3` | MIO3 |
+| WP/IO2 | `SPI_DQ2/MIO4` | MIO4 |
+| HOLD/IO3 | `SPI_DQ3/MIO5` | MIO5 |
+| CLK | `SPI_SCK/MIO6` | MIO6 |
+
+Boot strap pins `VCFG0/MIO7` and `VCFG1/MIO8` configure the QSPI mode.
+
+---
+
+### 5.5 TF Card (microSD)
+
+**Connector:** U11 (microSD with card detect switch)
+**Connected to:** PS MIO (Bank 501)
+
+| Signal | Net | MIO |
+|---|---|---|
+| CLK | `SD_CLK` | MIO16 |
+| CMD | `SD_CMD` | MIO17 |
+| DAT0 | `SD_D0` | MIO18 |
+| DAT1 | `SD_D1` | MIO19 |
+| DAT2 | `SD_D2` | MIO20 |
+| DAT3/CD | `SD_D3` | MIO21 |
+| Card Detect | `SD_CD` | MIO22 |
+
+---
+
+### 5.6 EEPROM — 24C02
+
+**IC:** U10 24C02 (2kbit, I2C)
+**Address:** A0=A1=A2=GND → I2C address 0x50
+**Connected to:** PL BANK 34
+
+| Signal | Net | ZYNQ Pin |
+|---|---|---|
+| SCL | `EEPROM_SCL` | R20 |
+| SDA | `EEPROM_SDA` | R21 |
+
+---
+
+### 5.7 DDR3 Memory — MT41K256M16
+
+**IC:** J1 MT41K256M16TW-107 (256M × 16bit = 512MB)
+**Connected to:** PS DDR Controller (BANK 502)
+
+| Group | Signals | Notes |
+|---|---|---|
+| Data | DQ[0:15] | 16-bit wide |
+| Data masks | DM0, DM1 | |
+| Data strobes | DQS_P/N[0:1] | Differential |
+| Address | A[0:14] | 15-bit row/col address |
+| Bank | BA[0:2] | |
+| Control | RAS#, CAS#, WE# | |
+| Clock | CK, CK# | Differential |
+| Clock enable | CKE0 | |
+| Chip select | CS0# | |
+| ODT | ODT0 | |
+| Reset | RESET# | |
+| Reference | VREF (DDR3_VREF) | VCC1V5/2 = 0.75V |
+
+---
+
+### 5.8 Clocks
+
+| Clock | Frequency | Crystal | Net | ZYNQ Pin |
+|---|---|---|---|---|
+| PS Clock | 33.333 MHz | X1 (active) | `PS_CLK_33.333M` | F7 (PS_CLK_500) |
+| PL Clock | 50 MHz | X2 (active) | `CLK_50M` | M19 (BANK34 L13P) |
+| ETH Ref Clock | 25 MHz | X4 (passive) | — | RTL8211E CKXTAL1/2 |
+
+---
+
+### 5.9 Buttons & LEDs
+
+| Component | Net | ZYNQ Pin | Notes |
+|---|---|---|---|
+| KEY1 | `KEY1` | K21 (BANK34 L9N) | Active low, 10kΩ pull-up |
+| KEY2 | `KEY2` | J20 (BANK34 L9P) | Active low, 10kΩ pull-up |
+| KEY3 / POR | `PS_SRST_B` | — | Hardware reset; wired to ZYNQ PS_SRST_B |
+| LED1 | `LED1` | P20 (BANK34 L18P) | Green, 330Ω series |
+| LED2 | `LED2` | P21 (BANK34 L18N) | Green, 330Ω series |
+| LED3 (DONE) | — | — | Red; driven by DONE_0 via R141 |
+| LED4 (Power) | — | — | Red; driven by VCC3V3 via R452 |
+
+---
+
+### 5.10 RGB LCD FPC Connector J35 (V1.3B only)
+
+**Connector:** J35 40-pin FPC (1.0mm pitch)
+**BANK:** 13 (VCCO = 3.3V)
+**Compatible with:** Hellofpga.com RGB screens and Zhengdian Atom RGB screens
+
+| J35 Pin | Signal | ZYNQ Pin |
+|---|---|---|
+| 1 | 5V | — |
+| 2 | 5V | — |
+| 3 | RGB_LCD_R0 | V7 |
+| 4 | RGB_LCD_R1 | AA12 |
+| 5 | RGB_LCD_R2 | AB7 |
+| 6 | RGB_LCD_R3 | AA8 |
+| 7 | RGB_LCD_R4 | U10 |
+| 8 | RGB_LCD_R5 | AB12 |
+| 9 | RGB_LCD_R6 | V10 |
+| 10 | RGB_LCD_R7 | Y4 |
+| 11 | GND | — |
+| 12 | RGB_LCD_G0 | AB9 |
+| 13 | RGB_LCD_G1 | V8 |
+| 14 | RGB_LCD_G2 | Y6 |
+| 15 | RGB_LCD_G3 | Y8 |
+| 16 | RGB_LCD_G4 | W8 |
+| 17 | RGB_LCD_G5 | Y9 |
+| 18 | RGB_LCD_G6 | AA9 |
+| 19 | RGB_LCD_G7 | AB10 |
+| 20 | GND | — |
+| 21 | RGB_LCD_B0 | Y5 |
+| 22 | RGB_LCD_B1 | V4 |
+| 23 | RGB_LCD_B2 | AA7 |
+| 24 | RGB_LCD_B3 | W7 |
+| 25 | RGB_LCD_B4 | AB6 |
+| 26 | RGB_LCD_B5 | AB4 |
+| 27 | RGB_LCD_B6 | AB5 |
+| 28 | RGB_LCD_B7 | W6 |
+| 29 | GND | — |
+| 30 | RGB_LCD_CLK | AA4 |
+| 31 | RGB_LCD_HSYNC | V9 |
+| 32 | RGB_LCD_VSYNC | AB2 |
+| 33 | RGB_LCD_DE | AA6 |
+| 34 | RGB_LCD_BL (backlight) | U7 |
+| 35 | RGB_LCD_TP_RES (touch reset) | U6 |
+| 36 | RGB_LCD_TP_SDA (touch I2C) | AB1 |
+| 37 | NC | — |
+| 38 | RGB_LCD_TP_SCL (touch I2C) | U5 |
+| 39 | RGB_LCD_TP_INT (touch interrupt) | U4 |
+| 40 | RGB_LCD_RST (panel reset) | W5 |
+
+---
+
+### 5.11 JTAG Header J15
+
+**Connector:** 2×5 pin, 2.54mm pitch (standard Xilinx 10-pin JTAG)
+
+| J15 Pin | Signal |
+|---|---|
+| 1 | TCK |
+| 2 | GND |
+| 3 | TDO |
+| 4 | VCC (3.3V) |
+| 5 | TMS |
+| 6 | NC |
+| 7 | NC |
+| 8 | NC |
+| 9 | TDI |
+| 10 | GND |
+
+---
+
+### 5.12 Boot Mode DIP Switches S1 & S2
+
+Controls ZYNQ boot source via `VCFG0/MIO7` and `VCFG1/MIO8`.
+
+| S1 | S2 | Boot Mode |
+|---|---|---|
+| OFF | OFF | JTAG |
+| ON | OFF | QSPI Flash |
+| OFF | ON | SD Card (TF) |
+
+---
+
+## 6. GPIO Headers — Full Pin Tables
+
+### 6.1 J5 — BANK 35 (3.3V, 40-pin)
+
+Odd pins on left column, even pins on right column (2×20 arrangement).
+
+| J5 Pin | Net | ZYNQ Pin | Pair |
+|---|---|---|---|
+| 1 | 5V_DC | — | — |
+| 2 | 5V_DC | — | — |
+| 3 | VCC3V3 | — | — |
+| 4 | VCC3V3 | — | — |
+| 5 | GND | — | — |
+| 6 | GND | — | — |
+| 7 | GPIO_H19_L19P | H19 | L19P |
+| 8 | GPIO_H20_L19N | H20 | L19N |
+| 9 | GPIO_E18_L5N | E18 | L5N |
+| 10 | GPIO_F18_L5P | F18 | L5P |
+| 11 | GPIO_F17_L6N | F17 | L6N |
+| 12 | GPIO_G17_L6P | G17 | L6P |
+| 13 | GPIO_C17_L11P | C17 | L11P |
+| 14 | GPIO_C18_L11N | C18 | L11N |
+| 15 | GPIO_G19_L20P | G19 | L20P |
+| 16 | GPIO_F19_L20N | F19 | L20N |
+| 17 | GPIO_E20_L21N | E20 | L21N |
+| 18 | GPIO_E19_L21P | E19 | L21P |
+| 19 | GPIO_D22_L16P | D22 | L16P |
+| 20 | GPIO_C22_L16N | C22 | L16N |
+| 21 | GPIO_B22_L18N | B22 | L18N |
+| 22 | GPIO_B21_L18P | B21 | L18P |
+| 23 | GPIO_B17_L8N | B17 | L8N |
+| 24 | GPIO_B16_L8P | B16 | L8P |
+| 25 | GPIO_A17_L9N | A17 | L9N |
+| 26 | GPIO_A16_L9P | A16 | L9P |
+| 27 | GPIO_D20_L14P | D20 | L14P |
+| 28 | GPIO_C20_L14N | C20 | L14N |
+| 29 | GPIO_B15_L7N | B15 | L7N |
+| 30 | GPIO_C15_L7P | C15 | L7P |
+| 31 | GPIO_D17_L2N | D17 | L2N |
+| 32 | GPIO_D16_L2P | D16 | L2P |
+| 33 | GPIO_D15_L3N | D15 | L3N |
+| 34 | GPIO_E15_L3P | E15 | L3P |
+| 35 | GPIO_D18_L12P | D18 | L12P |
+| 36 | GPIO_C19_L12N | C19 | L12N |
+| 37 | GPIO_E16_L1N | E16 | L1N |
+| 38 | GPIO_F16_L1P | F16 | L1P |
+| 39 | GPIO_G15_L4P | G15 | L4P |
+| 40 | GPIO_G16_L4N | G16 | L4N |
+
+---
+
+### 6.2 J6 — BANK 33 (VADJ, 40-pin)
+
+| J6 Pin | Net | ZYNQ Pin | Pair |
+|---|---|---|---|
+| 1 | 5V_DC | — | — |
+| 2 | 5V_DC | — | — |
+| 3 | VCCIO_ADJ | — | — |
+| 4 | VCCIO_ADJ | — | — |
+| 5 | GND | — | — |
+| 6 | GND | — | — |
+| 7 | GPIO_U22_L2N (J6[0]) | U22 | L2N |
+| 8 | GPIO_T22_L2P (J6[1]) | T22 | L2P |
+| 9 | GPIO_W22_L3N (J6[2]) | W22 | L3N |
+| 10 | GPIO_V22_L3P (J6[3]) | V22 | L3P |
+| 11 | GPIO_Y21_L9N (J6[4]) | Y21 | L9N |
+| 12 | GPIO_Y20_L9P (J6[5]) | Y20 | L9P |
+| 13 | GPIO_AB22_L7N (J6[6]) | AB22 | L7N |
+| 14 | GPIO_AA22_L7P (J6[7]) | AA22 | L7P |
+| 15 | GPIO_AB21_L8N (J6[8]) | AB21 | L8N |
+| 16 | GPIO_AA21_L8P (J6[9]) | AA21 | L8P |
+| 17 | GPIO_AB19_L10P (J6[10]) | AB19 | L10P |
+| 18 | GPIO_AB20_L10N (J6[11]) | AB20 | L10N |
+| 19 | GPIO_AA19_L11N (J6[12]) | AA19 | L11N |
+| 20 | GPIO_Y19_L11P (J6[13]) | Y19 | L11P |
+| 21 | GPIO_AB16_L18N (J6[14]) | AB16 | L18N |
+| 22 | GPIO_AA16_L18P (J6[15]) | AA16 | L18P |
+| 23 | GPIO_Y18_L12P (J6[16]) | Y18 | L12P |
+| 24 | GPIO_AA18_L12N (J6[17]) | AA18 | L12N |
+| 25 | GPIO_AB14_L24P (J6[18]) | AB14 | L24P |
+| 26 | GPIO_AB15_L24N (J6[19]) | AB15 | L24N |
+| 27 | GPIO_Y13_L23P (J6[20]) | Y13 | L23P |
+| 28 | GPIO_AA13_L23N (J6[21]) | AA13 | L23N |
+| 29 | GPIO_V13_L20P (J6[22]) | V13 | L20P |
+| 30 | GPIO_W13_L20N (J6[23]) | W13 | L20N |
+| 31 | GPIO_W18_L13N (J6[24]) | W18 | L13N |
+| 32 | GPIO_W17_L13P (J6[25]) | W17 | L13P |
+| 33 | GPIO_AA17_L17P (J6[26]) | AA17 | L17P |
+| 34 | GPIO_AB17_L17N (J6[27]) | AB17 | L17N |
+| 35 | GPIO_W16_L14P (J6[28]) | W16 | L14P |
+| 36 | GPIO_Y16_L14N (J6[29]) | Y16 | L14N |
+| 37 | GPIO_Y14_L22P (J6[30]) | Y14 | L22P |
+| 38 | GPIO_AA14_L22N (J6[31]) | AA14 | L22N |
+| 39 | GPIO_V15_L19N (J6[32]) | V15 | L19N |
+| 40 | GPIO_V14_L19P (J6[33]) | V14 | L19P |
+
+---
+
+## 7. Ready-to-Use Vivado XDC Constraints
+
+> Base IOSTANDARD is LVCMOS33 unless noted. Adjust J6 constraints if VADJ ≠ 3.3V.
+
+### 7.1 Onboard Peripherals
+
+```tcl
+# 50 MHz PL Clock
+create_clock -period 20 -name clk_50 [get_ports clk_50]
+set_property -dict {PACKAGE_PIN M19 IOSTANDARD LVCMOS33} [get_ports clk_50]
+
+# UART (PL side via CH340N)
+set_property -dict {PACKAGE_PIN M17 IOSTANDARD LVCMOS33} [get_ports uart_rxd]
+set_property -dict {PACKAGE_PIN L17 IOSTANDARD LVCMOS33} [get_ports uart_txd]
+
+# LEDs
+set_property -dict {PACKAGE_PIN P20 IOSTANDARD LVCMOS33} [get_ports LED1]
+set_property -dict {PACKAGE_PIN P21 IOSTANDARD LVCMOS33} [get_ports LED2]
+
+# Keys
+set_property -dict {PACKAGE_PIN K21 IOSTANDARD LVCMOS33} [get_ports KEY1]
+set_property -dict {PACKAGE_PIN J20 IOSTANDARD LVCMOS33} [get_ports KEY2]
+
+# EEPROM (I2C)
+set_property -dict {PACKAGE_PIN R20 IOSTANDARD LVCMOS33} [get_ports EEPROM_SCL]
+set_property -dict {PACKAGE_PIN R21 IOSTANDARD LVCMOS33} [get_ports EEPROM_SDA]
+```
+
+---
+
+### 7.2 Gigabit Ethernet RGMII
+
+```tcl
+# RGMII PHY (RTL8211E)
+create_clock -period 8 -name RGMII_rxc [get_ports RGMII_rxc]
+
+set_property -dict {PACKAGE_PIN G21 IOSTANDARD LVCMOS33} [get_ports MDIO_PHY_mdc]
+set_property -dict {PACKAGE_PIN H22 IOSTANDARD LVCMOS33} [get_ports MDIO_PHY_mdio_io]
+
+# RX
+set_property -dict {PACKAGE_PIN A22 IOSTANDARD LVCMOS33} [get_ports {RGMII_rd[0]}]
+set_property -dict {PACKAGE_PIN A18 IOSTANDARD LVCMOS33} [get_ports {RGMII_rd[1]}]
+set_property -dict {PACKAGE_PIN A19 IOSTANDARD LVCMOS33} [get_ports {RGMII_rd[2]}]
+set_property -dict {PACKAGE_PIN B20 IOSTANDARD LVCMOS33} [get_ports {RGMII_rd[3]}]
+set_property -dict {PACKAGE_PIN A21 IOSTANDARD LVCMOS33} [get_ports RGMII_rx_ctl]
+set_property -dict {PACKAGE_PIN B19 IOSTANDARD LVCMOS33} [get_ports RGMII_rxc]
+
+# TX
+set_property -dict {PACKAGE_PIN E21 IOSTANDARD LVCMOS33} [get_ports {RGMII_td[0]}]
+set_property -dict {PACKAGE_PIN F21 IOSTANDARD LVCMOS33} [get_ports {RGMII_td[1]}]
+set_property -dict {PACKAGE_PIN F22 IOSTANDARD LVCMOS33} [get_ports {RGMII_td[2]}]
+set_property -dict {PACKAGE_PIN G20 IOSTANDARD LVCMOS33} [get_ports {RGMII_td[3]}]
+set_property -dict {PACKAGE_PIN G22 IOSTANDARD LVCMOS33} [get_ports RGMII_tx_ctl]
+set_property -dict {PACKAGE_PIN D21 IOSTANDARD LVCMOS33} [get_ports RGMII_txc]
+
+# TX SLEW must be FAST
+set_property SLEW FAST [get_ports {RGMII_td[0]}]
+set_property SLEW FAST [get_ports {RGMII_td[1]}]
+set_property SLEW FAST [get_ports {RGMII_td[2]}]
+set_property SLEW FAST [get_ports {RGMII_td[3]}]
+set_property SLEW FAST [get_ports RGMII_tx_ctl]
+set_property SLEW FAST [get_ports RGMII_txc]
+```
+
+---
+
+### 7.3 HDMI — Version-Specific
+
+```tcl
+# ---- V1.0 / V1.1 / V1.2 ----
+set_property PACKAGE_PIN J21 [get_ports {hdmi_d_p[2]}]
+set_property PACKAGE_PIN L21 [get_ports {hdmi_d_p[1]}]
+set_property PACKAGE_PIN M21 [get_ports {hdmi_d_p[0]}]
+set_property PACKAGE_PIN N22 [get_ports hdmi_clk_p]  # NOTE: N22 for V1.0/1.1/1.2
+
+# ---- V1.3 / V1.3B ----
+set_property PACKAGE_PIN J21 [get_ports {hdmi_d_p[2]}]
+set_property PACKAGE_PIN L21 [get_ports {hdmi_d_p[1]}]
+set_property PACKAGE_PIN M21 [get_ports {hdmi_d_p[0]}]
+set_property PACKAGE_PIN N19 [get_ports hdmi_clk_p]  # NOTE: N19 (SRCC) for V1.3/V1.3B
+
+# V1.3 / V1.3B additional HDMI signals
+set_property -dict {PACKAGE_PIN K20 IOSTANDARD LVCMOS33} [get_ports HDMI_SDA]
+set_property -dict {PACKAGE_PIN K19 IOSTANDARD LVCMOS33} [get_ports HDMI_SCL]
+set_property -dict {PACKAGE_PIN L19 IOSTANDARD LVCMOS33} [get_ports HDMI_RX_HPD]
+```
+
+---
+
+### 7.4 J5 Header (BANK 35, LVCMOS33)
+
+```tcl
+## J5 on board (BANK35, fixed 3.3V)
+set_property IOSTANDARD LVCMOS33 [get_ports {J5[*]}]
+set_property PACKAGE_PIN H19 [get_ports {J5[0]}];  # IO_B35_L19P
+set_property PACKAGE_PIN H20 [get_ports {J5[1]}];  # IO_B35_L19N
+set_property PACKAGE_PIN E18 [get_ports {J5[2]}];  # IO_B35_L5N
+set_property PACKAGE_PIN F18 [get_ports {J5[3]}];  # IO_B35_L5P
+set_property PACKAGE_PIN F17 [get_ports {J5[4]}];  # IO_B35_L6N
+set_property PACKAGE_PIN G17 [get_ports {J5[5]}];  # IO_B35_L6P
+set_property PACKAGE_PIN C17 [get_ports {J5[6]}];  # IO_B35_L11P
+set_property PACKAGE_PIN C18 [get_ports {J5[7]}];  # IO_B35_L11N
+set_property PACKAGE_PIN G19 [get_ports {J5[8]}];  # IO_B35_L20P
+set_property PACKAGE_PIN F19 [get_ports {J5[9]}];  # IO_B35_L20N
+set_property PACKAGE_PIN E20 [get_ports {J5[10]}]; # IO_B35_L21N
+set_property PACKAGE_PIN E19 [get_ports {J5[11]}]; # IO_B35_L21P
+set_property PACKAGE_PIN D22 [get_ports {J5[12]}]; # IO_B35_L16P
+set_property PACKAGE_PIN C22 [get_ports {J5[13]}]; # IO_B35_L16N
+set_property PACKAGE_PIN B22 [get_ports {J5[14]}]; # IO_B35_L18N
+set_property PACKAGE_PIN B21 [get_ports {J5[15]}]; # IO_B35_L18P
+set_property PACKAGE_PIN B17 [get_ports {J5[16]}]; # IO_B35_L8N
+set_property PACKAGE_PIN B16 [get_ports {J5[17]}]; # IO_B35_L8P
+set_property PACKAGE_PIN A17 [get_ports {J5[18]}]; # IO_B35_L9N
+set_property PACKAGE_PIN A16 [get_ports {J5[19]}]; # IO_B35_L9P
+set_property PACKAGE_PIN D20 [get_ports {J5[20]}]; # IO_B35_L14P
+set_property PACKAGE_PIN C20 [get_ports {J5[21]}]; # IO_B35_L14N
+set_property PACKAGE_PIN B15 [get_ports {J5[22]}]; # IO_B35_L7N
+set_property PACKAGE_PIN C15 [get_ports {J5[23]}]; # IO_B35_L7P
+set_property PACKAGE_PIN D17 [get_ports {J5[24]}]; # IO_B35_L2N
+set_property PACKAGE_PIN D16 [get_ports {J5[25]}]; # IO_B35_L2P
+set_property PACKAGE_PIN D15 [get_ports {J5[26]}]; # IO_B35_L3N
+set_property PACKAGE_PIN E15 [get_ports {J5[27]}]; # IO_B35_L3P
+set_property PACKAGE_PIN D18 [get_ports {J5[28]}]; # IO_B35_L12P
+set_property PACKAGE_PIN C19 [get_ports {J5[29]}]; # IO_B35_L12N
+set_property PACKAGE_PIN E16 [get_ports {J5[30]}]; # IO_B35_L1N
+set_property PACKAGE_PIN F16 [get_ports {J5[31]}]; # IO_B35_L1P
+set_property PACKAGE_PIN G15 [get_ports {J5[32]}]; # IO_B35_L4P
+set_property PACKAGE_PIN G16 [get_ports {J5[33]}]; # IO_B35_L4N
+```
+
+---
+
+### 7.5 J6 Header (BANK 33, LVCMOS33)
+
+```tcl
+## J6 on board (BANK33, VADJ — default 3.3V, adjust IOSTANDARD if changed)
+set_property IOSTANDARD LVCMOS33 [get_ports {J6[*]}]
+set_property PACKAGE_PIN U22 [get_ports {J6[0]}];  # J6/7  = IO_B33_L2N
+set_property PACKAGE_PIN T22 [get_ports {J6[1]}];  # J6/8  = IO_B33_L2P
+set_property PACKAGE_PIN W22 [get_ports {J6[2]}];  # J6/9  = IO_B33_L3N
+set_property PACKAGE_PIN V22 [get_ports {J6[3]}];  # J6/10 = IO_B33_L3P
+set_property PACKAGE_PIN Y21 [get_ports {J6[4]}];  # J6/11 = IO_B33_L9N
+set_property PACKAGE_PIN Y20 [get_ports {J6[5]}];  # J6/12 = IO_B33_L9P
+set_property PACKAGE_PIN AB22 [get_ports {J6[6]}]; # J6/13 = IO_B33_L7N
+set_property PACKAGE_PIN AA22 [get_ports {J6[7]}]; # J6/14 = IO_B33_L7P
+set_property PACKAGE_PIN AB21 [get_ports {J6[8]}]; # J6/15 = IO_B33_L8N
+set_property PACKAGE_PIN AA21 [get_ports {J6[9]}]; # J6/16 = IO_B33_L8P
+set_property PACKAGE_PIN AB19 [get_ports {J6[10]}]; # J6/17 = IO_B33_L10P
+set_property PACKAGE_PIN AB20 [get_ports {J6[11]}]; # J6/18 = IO_B33_L10N
+set_property PACKAGE_PIN AA19 [get_ports {J6[12]}]; # J6/19 = IO_B33_L11N
+set_property PACKAGE_PIN Y19  [get_ports {J6[13]}]; # J6/20 = IO_B33_L11P
+set_property PACKAGE_PIN AB16 [get_ports {J6[14]}]; # J6/21 = IO_B33_L18N
+set_property PACKAGE_PIN AA16 [get_ports {J6[15]}]; # J6/22 = IO_B33_L18P
+set_property PACKAGE_PIN Y18  [get_ports {J6[16]}]; # J6/23 = IO_B33_L12P
+set_property PACKAGE_PIN AA18 [get_ports {J6[17]}]; # J6/24 = IO_B33_L12N
+set_property PACKAGE_PIN AB14 [get_ports {J6[18]}]; # J6/25 = IO_B33_L24P
+set_property PACKAGE_PIN AB15 [get_ports {J6[19]}]; # J6/26 = IO_B33_L24N
+set_property PACKAGE_PIN Y13  [get_ports {J6[20]}]; # J6/27 = IO_B33_L23P
+set_property PACKAGE_PIN AA13 [get_ports {J6[21]}]; # J6/28 = IO_B33_L23N
+set_property PACKAGE_PIN V13  [get_ports {J6[22]}]; # J6/29 = IO_B33_L20P
+set_property PACKAGE_PIN W13  [get_ports {J6[23]}]; # J6/30 = IO_B33_L20N
+set_property PACKAGE_PIN W18  [get_ports {J6[24]}]; # J6/31 = IO_B33_L13N
+set_property PACKAGE_PIN W17  [get_ports {J6[25]}]; # J6/32 = IO_B33_L13P
+set_property PACKAGE_PIN AA17 [get_ports {J6[26]}]; # J6/33 = IO_B33_L17P
+set_property PACKAGE_PIN AB17 [get_ports {J6[27]}]; # J6/34 = IO_B33_L17N
+set_property PACKAGE_PIN W16  [get_ports {J6[28]}]; # J6/35 = IO_B33_L14P
+set_property PACKAGE_PIN Y16  [get_ports {J6[29]}]; # J6/36 = IO_B33_L14N
+set_property PACKAGE_PIN Y14  [get_ports {J6[30]}]; # J6/37 = IO_B33_L22P
+set_property PACKAGE_PIN AA14 [get_ports {J6[31]}]; # J6/38 = IO_B33_L22N
+set_property PACKAGE_PIN V15  [get_ports {J6[32]}]; # J6/39 = IO_B33_L19N
+set_property PACKAGE_PIN V14  [get_ports {J6[33]}]; # J6/40 = IO_B33_L19P
+```
+
+---
+
+### 7.6 RGB LCD FPC (V1.3B only, BANK 13)
+
+```tcl
+## RGB LCD FPC J35 — V1.3B ONLY (BANK 13, LVCMOS33)
+## ================= R =================
+set_property -dict {PACKAGE_PIN Y4   IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_R[7]}]
+set_property -dict {PACKAGE_PIN V10  IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_R[6]}]
+set_property -dict {PACKAGE_PIN AB12 IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_R[5]}]
+set_property -dict {PACKAGE_PIN U10  IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_R[4]}]
+set_property -dict {PACKAGE_PIN AA8  IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_R[3]}]
+set_property -dict {PACKAGE_PIN AB7  IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_R[2]}]
+set_property -dict {PACKAGE_PIN AA12 IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_R[1]}]
+set_property -dict {PACKAGE_PIN V7   IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_R[0]}]
+## ================= G =================
+set_property -dict {PACKAGE_PIN AB10 IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_G[7]}]
+set_property -dict {PACKAGE_PIN AA9  IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_G[6]}]
+set_property -dict {PACKAGE_PIN Y9   IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_G[5]}]
+set_property -dict {PACKAGE_PIN W8   IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_G[4]}]
+set_property -dict {PACKAGE_PIN Y8   IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_G[3]}]
+set_property -dict {PACKAGE_PIN Y6   IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_G[2]}]
+set_property -dict {PACKAGE_PIN V8   IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_G[1]}]
+set_property -dict {PACKAGE_PIN AB9  IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_G[0]}]
+## ================= B =================
+set_property -dict {PACKAGE_PIN W6   IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_B[7]}]
+set_property -dict {PACKAGE_PIN AB5  IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_B[6]}]
+set_property -dict {PACKAGE_PIN AB4  IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_B[5]}]
+set_property -dict {PACKAGE_PIN AB6  IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_B[4]}]
+set_property -dict {PACKAGE_PIN W7   IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_B[3]}]
+set_property -dict {PACKAGE_PIN AA7  IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_B[2]}]
+set_property -dict {PACKAGE_PIN V4   IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_B[1]}]
+set_property -dict {PACKAGE_PIN Y5   IOSTANDARD LVCMOS33} [get_ports {RGB_LCD_B[0]}]
+## ================= CONTROL =================
+set_property -dict {PACKAGE_PIN V9   IOSTANDARD LVCMOS33} [get_ports RGB_LCD_HSYNC]
+set_property -dict {PACKAGE_PIN AB2  IOSTANDARD LVCMOS33} [get_ports RGB_LCD_VSYNC]
+set_property -dict {PACKAGE_PIN AA4  IOSTANDARD LVCMOS33} [get_ports RGB_LCD_CLK]
+set_property -dict {PACKAGE_PIN AA6  IOSTANDARD LVCMOS33} [get_ports RGB_LCD_DE]
+## ================= BACKLIGHT =================
+set_property -dict {PACKAGE_PIN U7   IOSTANDARD LVCMOS33} [get_ports RGB_LCD_BL]
+## ================= RESET =================
+set_property -dict {PACKAGE_PIN W5   IOSTANDARD LVCMOS33} [get_ports RGB_LCD_RST]
+## ================= TOUCH (I2C) =================
+set_property -dict {PACKAGE_PIN U6   IOSTANDARD LVCMOS33} [get_ports RGB_LCD_TP_RES]
+set_property -dict {PACKAGE_PIN U4   IOSTANDARD LVCMOS33} [get_ports RGB_LCD_TP_INT]
+set_property -dict {PACKAGE_PIN U5   IOSTANDARD LVCMOS33} [get_ports RGB_LCD_TP_SCL]
+set_property -dict {PACKAGE_PIN AB1  IOSTANDARD LVCMOS33} [get_ports RGB_LCD_TP_SDA]
+```
+
+---
+
+*Schematic source: hellofpga.com — SmartZynq_SL_Schematic_V1d3B_20260413.pdf*
+*Document compiled for use with Vivado 2018.3+ and Claude Code.*
