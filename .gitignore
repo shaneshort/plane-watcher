@@ -71,3 +71,6 @@ build/
 boot/uramdisk.image.gz.dist
 debug-boot.log
 .serena
+ops/
+.claude/
+docs/plans
