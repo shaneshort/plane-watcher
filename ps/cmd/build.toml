@@ -1,0 +1,48 @@
+# Per-command build metadata for `builder`.
+#
+# Schema:
+#   [<command>]
+#   targets = ["host", "arm"]   # subset of {"host","arm"}; default both
+#   service = "S99<name>"       # optional, used by hot-swap restart map
+#
+# Commands without an entry default to targets = ["host", "arm"].
+
+[beast-client]
+targets = ["host"]
+
+[builder]
+targets = ["host"]
+
+[collect-stats]
+targets = ["host"]
+
+[fifo-monitor]
+targets = ["host"]
+
+[plane-feeder]
+targets = ["arm"]
+service = "S99plane-feeder"
+
+[pps-check]
+targets = ["host"]
+
+[regdump]
+targets = ["host", "arm"]
+
+[regpeek]
+targets = ["host", "arm"]
+
+[replay]
+targets = ["host"]
+
+[sweep-gain]
+targets = ["arm"]
+
+[tune-detector]
+targets = ["host", "arm"]
+
+[ubx]
+targets = ["host", "arm"]
+
+[watch-stats]
+targets = ["host"]
