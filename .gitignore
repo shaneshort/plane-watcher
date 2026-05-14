@@ -68,9 +68,17 @@ TODO.md
 
 # Build artifacts
 build/
+# The orchestration package happens to be named "build" — re-include it.
+!ps/internal/build/
 boot/uramdisk.image.gz.dist
 debug-boot.log
 .serena
 ops/
 .claude/
 docs/plans
+
+# builder runtime state
+tools/builder.local.toml
+firmware/petalinux/build/pwbuild-staging/
+firmware/petalinux/build/builder-logs/
+firmware/petalinux/build/.builder.lock
