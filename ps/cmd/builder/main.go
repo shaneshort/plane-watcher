@@ -137,10 +137,4 @@ func printCLIEvent(e build.Event) {
 	}
 }
 
-// runTUI is implemented in tui.go (Wave 8). For now, point users at the
-// CLI flags so the binary remains usable until the TUI lands.
-func runTUI(cfg *config.Config) int {
-	fmt.Println("TUI not yet implemented; pass --help for CLI flags")
-	_ = cfg
-	return 1
-}
+// runTUI lives in tui.go.
