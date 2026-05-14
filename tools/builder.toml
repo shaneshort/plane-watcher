@@ -1,0 +1,11 @@
+# Tracked builder policy. Per-checkout state lives in builder.local.toml
+# (gitignored). See docs/plans/2026-05-14-builder-tui-design.md §7.4.
+
+[services]
+# Map of cross-built binary name -> command to run via ssh after a hot-swap.
+# Add new entries as services land on the target.
+plane-feeder = "/etc/init.d/S99plane-feeder restart"
+
+[defaults]
+reboot_after_ssh_deploy = false
+sd_eject_after_copy = false

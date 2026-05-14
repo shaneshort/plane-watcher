@@ -66,11 +66,14 @@ $EDITOR tools/plane_watcher.env
 # Or build and deploy in one step
 ./tools/build-bitstream.sh --deploy
 
-# Build PS tools for the board
-cd ps && ./build-arm-tools.sh
+# Build + slipstream PS tools into a fresh Petalinux image, then deploy
+go -C ps run ./cmd/builder --ps-slipstream --petalinux --deploy=ssh --reboot
 
-# Build PS tools for the host
-cd ps && ./build-tools.sh
+# Or hot-swap fresh ARM binaries onto a running board (no image rebuild)
+go -C ps run ./cmd/builder --ps-hotswap
+
+# Or run the interactive TUI
+go -C ps run ./cmd/builder
 
 # Run RTL simulation
 cd hdl/sim && make sim_all

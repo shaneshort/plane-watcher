@@ -6,6 +6,35 @@
 - simulation vector generation and log analysis
 - RF capture and inspection helpers
 
+## `builder` (consolidated build TUI/CLI)
+
+`ps/cmd/builder/` is the consolidated front-end for the Vivado →
+Petalinux → deploy chain *and* PS Go-tool cross-build/deploy. It replaces
+`rebuild.sh`, `ps/build-tools.sh`, and `ps/build-arm-tools.sh` (those
+scripts are scheduled for deletion once the real-hardware smoke test
+passes).
+
+```sh
+# Interactive TUI:
+go -C ps run ./cmd/builder
+
+# Equivalent CLI invocations:
+go -C ps run ./cmd/builder --bitstream --petalinux --deploy=ssh
+go -C ps run ./cmd/builder --bitstream                       # repackage BOOT.BIN only
+go -C ps run ./cmd/builder --ps-hotswap --no-restart         # iterate Go tools fast
+go -C ps run ./cmd/builder --ps-slipstream --petalinux --deploy=sd
+go -C ps run ./cmd/builder sync-recipe [--write]             # keep Yocto .inc in sync
+```
+
+The leaf scripts (`build-smartzynq-phase1.sh`, `build-petalinux.sh`) are
+invoked by `builder`; they remain documented as primitives, not as
+user-facing entry points. Settings are read from `tools/plane_watcher.env`
+(unchanged); `builder` policy lives in `tools/builder.toml` (services
+restart map, defaults); per-checkout state in `tools/builder.local.toml`
+(gitignored).
+
+See `docs/plans/2026-05-14-builder-tui-design.md` for the design.
+
 ## Build And Deploy
 
 - [build-bitstream.sh](/home/shanes/plane_watcher/tools/build-bitstream.sh): Vivado build wrapper with timing gate

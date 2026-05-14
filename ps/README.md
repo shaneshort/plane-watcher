@@ -34,29 +34,33 @@ pattern:
 
 ## Build
 
-Local build:
+PS Go tools are built via `builder` (`ps/cmd/builder/`):
 
 ```sh
-cd ps
-./build-tools.sh
+# Hot-swap fresh ARM binaries onto a running board:
+go -C ps run ./cmd/builder --ps-hotswap
+
+# Rebuild the Petalinux image with fresh tools slipstreamed in:
+go -C ps run ./cmd/builder --ps-slipstream --petalinux --deploy=ssh --reboot
+
+# TUI (no flags):
+go -C ps run ./cmd/builder
 ```
 
-Cross-build the main board tools:
+Which commands cross-build for ARM vs host is policy: see
+`ps/cmd/build.toml`. `builder` discovers `ps/cmd/*` directories at runtime
+and applies the `targets` setting for each.
+
+`builder` does not provide a host-batch build mode; for that, use `go build`
+directly:
 
 ```sh
-cd ps
-./build-arm-tools.sh
+cd ps && go build ./cmd/<name>
+# or all host-targeted commands:
+cd ps && for d in cmd/*/; do go build -o /tmp/$(basename $d) ./$d; done
 ```
 
-Those scripts write binaries to `ps/bin/<target>/`.
-
-Examples:
-
-- host tools: `ps/bin/linux-amd64/`
-- Pluto target tools: `ps/bin/linux-armv7/`
-
-Avoid plain `go build ./cmd/...` from the module root if you do not pass `-o`,
-because Go will otherwise place the output binary in the current directory.
+For the design, see `docs/plans/2026-05-14-builder-tui-design.md`.
 
 Live tuning dashboard:
 
