@@ -2,7 +2,7 @@
 
 `tools/` contains utility scripts for three separate jobs:
 
-- bitstream build/deploy wrappers
+- firmware build/deploy wrappers
 - simulation vector generation and log analysis
 - RF capture and inspection helpers
 
@@ -37,8 +37,10 @@ See `docs/plans/2026-05-14-builder-tui-design.md` for the design.
 
 ## Build And Deploy
 
-- [build-bitstream.sh](/home/shanes/plane_watcher/tools/build-bitstream.sh): Vivado build wrapper with timing gate
-- [deploy-bitstream.sh](/home/shanes/plane_watcher/tools/deploy-bitstream.sh): package and optionally deploy `system_top.bit.bin`
+- [rebuild.sh](/home/shanes/plane_watcher/tools/rebuild.sh): active Vivado + Petalinux rebuild/package/deploy flow
+- [build-smartzynq-phase1.sh](/home/shanes/plane_watcher/tools/build-smartzynq-phase1.sh): Vivado-only Smart ZYNQ phase-1 bitstream/XSA build
+- [build-bitstream.sh](/home/shanes/plane_watcher/tools/build-bitstream.sh): legacy Pluto/vendor bitstream wrapper
+- [deploy-bitstream.sh](/home/shanes/plane_watcher/tools/deploy-bitstream.sh): legacy `system_top.bit.bin` packaging/deploy helper
 - [plane_watcher.env.example](/home/shanes/plane_watcher/tools/plane_watcher.env.example): template for machine-local configuration
 
 Typical flow:
@@ -46,8 +48,7 @@ Typical flow:
 ```sh
 cp tools/plane_watcher.env.example tools/plane_watcher.env
 $EDITOR tools/plane_watcher.env
-./tools/build-bitstream.sh --skip-deploy
-./tools/deploy-bitstream.sh --generate-only
+./tools/rebuild.sh --no-deploy
 ```
 
 ## Simulation And Analysis
@@ -56,6 +57,8 @@ $EDITOR tools/plane_watcher.env
 - [decode_sim_log.py](/home/shanes/plane_watcher/tools/decode_sim_log.py): parse decoded-message output from simulation logs
 - [compare_results.py](/home/shanes/plane_watcher/tools/compare_results.py): compare sim output against a software reference log
 - [scan_iq.py](/home/shanes/plane_watcher/tools/scan_iq.py): inspect IQ captures in software
+- [scan_scope_csv.py](/home/shanes/plane_watcher/tools/scan_scope_csv.py): recover Mode-S frames from scope-exported detector-envelope CSV captures
+- [udev/99-siglent-sds800x-hd-usbtmc.rules](/home/shanes/plane_watcher/tools/udev/99-siglent-sds800x-hd-usbtmc.rules): grant non-root USBTMC access to the bench `SDS814X-HD` scope
 - [resample_pluto_capture.py](/home/shanes/plane_watcher/tools/resample_pluto_capture.py): convert captured raw IQ into the expected sample format/rate
 
 ## Capture Helpers

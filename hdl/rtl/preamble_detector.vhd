@@ -76,8 +76,6 @@ library work ;
 entity preamble_detector is
   generic(
     NUM_MESSAGE_DECODER : integer := 1;      -- Number of downstream decoder instances
-    MESSAGE_DELAY_G     : integer := 50;
-    OUTPUT_TAP_G        : integer := 76;
     ENABLE_DEEP_DEBUG   : boolean := false
   );
   port(
@@ -94,6 +92,8 @@ entity preamble_detector is
     quiet_score_shift_cfg : in unsigned(2 downto 0);
     snr_ratio_shift_cfg   : in unsigned(2 downto 0);
     holdoff_cfg           : in unsigned(11 downto 0);              -- Runtime holdoff in samples (0-4095)
+    message_delay_cfg     : in unsigned(7 downto 0);               -- Runtime SOM delay in samples
+    output_tap_cfg        : in unsigned(7 downto 0);               -- Runtime output tap index
 
     power_out       :   out signed(INPUT_POWER_WIDTH-1 downto 0);           -- Power output to decoders
     out_valid       :   out std_logic;                                      -- Output valid strobe
@@ -112,7 +112,10 @@ entity preamble_detector is
     debug_holdoff_count : out unsigned(31 downto 0);
     debug_peak_age : out unsigned(31 downto 0);
     debug_no_free_count : out unsigned(31 downto 0);
-    debug_busy_drop_count : out unsigned(31 downto 0)
+    debug_busy_drop_count : out unsigned(31 downto 0);
+    debug_detect_pulse : out std_logic;
+    debug_capture_word0 : out std_logic_vector(31 downto 0);
+    debug_capture_word1 : out std_logic_vector(31 downto 0)
   );
 end entity;
 
@@ -129,12 +132,6 @@ architecture arch of preamble_detector is
     -- Total buffer length in samples: SPS × SPB × 8 = 8 × 2 × 8 = 128 samples.
     -- This holds one full preamble's worth of signal history.
     constant LOCAL_PREAMBLE_BUFFER_LENGTH : integer := SPS*SPB*PREAMBLE_LENGTH;
-
-    -- After the 4th preamble pulse completes (at ~5 µs), there are 3 µs of
-    -- quiet period before the data payload begins. At 16 MSPS, that's 48 samples.
-    -- We delay the SOM signal by this many samples so it fires at the exact
-    -- start of the first data bit.
-    constant MESSAGE_DELAY          : integer := MESSAGE_DELAY_G;
 
     -- Width of the sliding sum window (samples). Each pulse position accumulates
     -- 5 consecutive samples of power for a more robust detection than a single sample.
@@ -174,9 +171,6 @@ architecture arch of preamble_detector is
     -- Quiet zone D: after pulse 3 (indices 80-84, gap at 5.0-5.25 us)
     constant quiet_d_out            : integer := 10*SPS;                     -- 80
     constant quiet_d_in             : integer := 10*SPS + SAMPLE_WINDOW-1;   -- 84
-
-    -- Output tap: aligned with the last pulse's sum window entry point
-    constant OUTPUT_TAP             : integer := OUTPUT_TAP_G;
 
     -- Edge detection flags at the four pulse positions (registered)
     signal edge_qualifier           : std_logic_vector(3 downto 0);
@@ -223,6 +217,48 @@ architecture arch of preamble_detector is
     signal debug_peak_age_i         : unsigned(31 downto 0) := (others => '0');
     signal debug_no_free_count_i    : unsigned(31 downto 0) := (others => '0');
     signal debug_busy_drop_count_i  : unsigned(31 downto 0) := (others => '0');
+    signal capture_abs_pass_r       : std_logic := '0';
+    signal capture_quiet_pass_r     : std_logic := '0';
+    signal capture_snr_pass_r       : std_logic := '0';
+    signal capture_quiet_a_pass_r   : std_logic := '0';
+    signal capture_quiet_b_pass_r   : std_logic := '0';
+    signal capture_quiet_c_pass_r   : std_logic := '0';
+    signal capture_quiet_d_pass_r   : std_logic := '0';
+    signal capture_pulse_sum_r      : unsigned(13 downto 0) := (others => '0');
+    signal capture_gap_sum_r        : unsigned(13 downto 0) := (others => '0');
+
+    function pack_metric14(v : signed) return unsigned is
+        constant PACK_SHIFT : natural := 4;
+        constant PACK_MAX   : integer := 16383;
+        variable shifted    : signed(v'length-1 downto 0);
+    begin
+        shifted := shift_right(v, PACK_SHIFT);
+        if shifted(shifted'high) = '1' then
+            return to_unsigned(0, 14);
+        elsif shifted > to_signed(PACK_MAX, shifted'length) then
+            return to_unsigned(PACK_MAX, 14);
+        else
+            return resize(unsigned(shifted), 14);
+        end if;
+    end function;
+
+    function bool_to_sl(v : boolean) return std_logic is
+    begin
+        if v then
+            return '1';
+        end if;
+        return '0';
+    end function;
+
+    function any_high(v : std_logic_vector) return boolean is
+    begin
+        for i in v'range loop
+            if v(i) = '1' then
+                return true;
+            end if;
+        end loop;
+        return false;
+    end function;
 
 begin
 
@@ -284,6 +320,15 @@ begin
             quiet_d_pass_r <= false;
             snr_pass_r <= false;
             cycle_rpl_r <= (others => '0');
+            capture_abs_pass_r <= '0';
+            capture_quiet_pass_r <= '0';
+            capture_snr_pass_r <= '0';
+            capture_quiet_a_pass_r <= '0';
+            capture_quiet_b_pass_r <= '0';
+            capture_quiet_c_pass_r <= '0';
+            capture_quiet_d_pass_r <= '0';
+            capture_pulse_sum_r <= (others => '0');
+            capture_gap_sum_r <= (others => '0');
             sum0 := (others => '0');
             sum1 := (others => '0');
             sum2 := (others => '0');
@@ -354,6 +399,25 @@ begin
                 snr_pass_r <=
                     (sum_pulse > shift_left(sum_gap, to_integer(snr_ratio_shift_cfg))) and
                     (sum_gap >= to_signed(0, SNR_WIDTH));
+                capture_abs_pass_r <= '1' when
+                    ((sum0 > resize(POWER_THRESHOLD, SUM_WIDTH)) and
+                     (sum1 > resize(POWER_THRESHOLD, SUM_WIDTH)) and
+                     (sum2 > resize(POWER_THRESHOLD, SUM_WIDTH)) and
+                     (sum3 > resize(POWER_THRESHOLD, SUM_WIDTH)))
+                    else '0';
+                capture_quiet_a_pass_r <= '1' when (sum_quiet_a < shift_right(sum0, QUIET_ZONE_RATIO_SHIFT)) else '0';
+                capture_quiet_b_pass_r <= '1' when (sum_quiet_b < shift_right(sum1, QUIET_ZONE_RATIO_SHIFT)) else '0';
+                capture_quiet_c_pass_r <= '1' when (sum_quiet_c < shift_right(sum2, QUIET_ZONE_RATIO_SHIFT)) else '0';
+                capture_quiet_d_pass_r <= '1' when (sum_quiet_d < shift_right(sum3, QUIET_ZONE_RATIO_SHIFT)) else '0';
+                capture_quiet_pass_r <= '1' when
+                    (quiet_score > shift_right(sum_pulse, to_integer(quiet_score_shift_cfg)))
+                    else '0';
+                capture_snr_pass_r <= '1' when
+                    ((sum_pulse > shift_left(sum_gap, to_integer(snr_ratio_shift_cfg))) and
+                     (sum_gap >= to_signed(0, SNR_WIDTH)))
+                    else '0';
+                capture_pulse_sum_r <= pack_metric14(sum_pulse);
+                capture_gap_sum_r <= pack_metric14(sum_gap);
             end if;
 
             -- =================================================================
@@ -541,16 +605,19 @@ begin
     -- =========================================================================
     clock_out : process(clock, reset)
         variable current_rpl            : signed(INPUT_POWER_WIDTH-1 downto 0);
-        variable pending_downcount      : integer range 0 to MESSAGE_DELAY;
+        variable pending_downcount      : integer range 0 to 255;
         variable pending_index          : integer range 0 to NUM_MESSAGE_DECODER-1;
         variable has_pending            : boolean;
         variable ignored                : integer ;   -- Count of dropped detections (busy decoder)
         variable no_free                : integer ;   -- Count of preambles with no free decoder
+        variable output_tap_idx         : integer range 0 to LOCAL_PREAMBLE_BUFFER_LENGTH-1;
     begin
         if( reset = '1') then
             som <= (others => '0');
             current_rpl := to_signed(0,INPUT_POWER_WIDTH);
             som_pending <= (others => '0');
+            debug_capture_word0 <= (others => '0');
+            debug_capture_word1 <= (others => '0');
             has_pending := false;
             pending_index := 0;
             ignored := 0 ;
@@ -563,8 +630,29 @@ begin
             -- Default: no SOM pulses this cycle
             som <= (others => '0');
             out_valid <= qualify_valid;
-            power_out <= power_grid(OUTPUT_TAP);  -- Output tap aligned to detector timing
+            output_tap_idx := to_integer(output_tap_cfg);
+            if output_tap_idx > power_grid'high then
+                output_tap_idx := power_grid'high;
+            end if;
+            power_out <= power_grid(output_tap_idx);  -- Runtime-aligned output tap
             rpl <= current_rpl;
+            debug_capture_word0 <=
+                '0' &
+                qualify_valid &
+                preamble_detected &
+                capture_abs_pass_r &
+                capture_quiet_pass_r &
+                capture_snr_pass_r &
+                edge_grid(output_tap_idx) &
+                bool_to_sl(any_high(som_pending)) &
+                std_logic_vector(power_grid(output_tap_idx));
+            debug_capture_word1 <=
+                capture_quiet_a_pass_r &
+                capture_quiet_b_pass_r &
+                capture_quiet_c_pass_r &
+                capture_quiet_d_pass_r &
+                std_logic_vector(capture_pulse_sum_r) &
+                std_logic_vector(capture_gap_sum_r);
 
             -- Pending SOM countdown and detection capture run every cycle,
             -- not gated by qualify_valid. preamble_detected is a signal set
@@ -620,7 +708,7 @@ begin
                     for i in 0 to NUM_MESSAGE_DECODER-1 loop
                         if decoder_busy(i) = '0' then
                             current_rpl := register_rpl;
-                            pending_downcount := MESSAGE_DELAY;
+                            pending_downcount := to_integer(message_delay_cfg);
                             pending_index := i;
                             has_pending := true;
                             som_pending(i) <= '1';
@@ -652,5 +740,6 @@ begin
     debug_peak_age <= debug_peak_age_i when ENABLE_DEEP_DEBUG else (others => '0');
     debug_no_free_count <= debug_no_free_count_i when ENABLE_DEEP_DEBUG else (others => '0');
     debug_busy_drop_count <= debug_busy_drop_count_i when ENABLE_DEEP_DEBUG else (others => '0');
+    debug_detect_pulse <= preamble_detected;
 
 end architecture;

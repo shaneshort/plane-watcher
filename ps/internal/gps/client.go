@@ -45,11 +45,21 @@ type Client struct {
 	// observes (scanner error, EOF, or a gpsd ERROR message). Waiters
 	// prefer this over the generic "subscription closed" so transport
 	// failures surface with the real cause.
-	transportErr atomic.Value // error
+	//
+	// atomic.Pointer is used (not atomic.Value) because the various error
+	// sources below have different concrete types (*fmt.wrapError from
+	// gpsd ERROR wrapping, *errors.errorString from io.EOF, whatever
+	// bufio.Scanner surfaces). atomic.Value panics on a type mismatch
+	// between stores; Pointer[errHolder] sidesteps that.
+	transportErr atomic.Pointer[errHolder]
 
 	closeOnce sync.Once
 	closed    chan struct{}
 }
+
+// errHolder wraps an error so atomic.Pointer can store it regardless of
+// the error's concrete type.
+type errHolder struct{ err error }
 
 // DeviceInfo summarises a single device entry from gpsd's DEVICES message.
 type DeviceInfo struct {
@@ -100,8 +110,8 @@ func Dial(ctx context.Context, addr string) (*Client, error) {
 		return nil, fmt.Errorf("gpsd: waiting for DEVICES list: %w", ctx.Err())
 	case <-c.closed:
 		// Reader exited before DEVICES arrived — surface the real cause.
-		if v := c.transportErr.Load(); v != nil {
-			return nil, fmt.Errorf("gpsd: transport failed before DEVICES: %w", v.(error))
+		if h := c.transportErr.Load(); h != nil {
+			return nil, fmt.Errorf("gpsd: transport failed before DEVICES: %w", h.err)
 		}
 		return nil, errors.New("gpsd: connection closed before DEVICES arrived")
 	}
@@ -144,10 +154,21 @@ func (c *Client) Close() error {
 // if the transport is still healthy. Waiters and callers use this to
 // distinguish "reader closed cleanly" from "reader died with X".
 func (c *Client) TransportErr() error {
-	if v := c.transportErr.Load(); v != nil {
-		return v.(error)
+	if h := c.transportErr.Load(); h != nil {
+		return h.err
 	}
 	return nil
+}
+
+// setTransportErrOnce records err as the transport failure cause, but only
+// if no prior cause has been stored. First-writer-wins semantics mean a
+// gpsd ERROR message is preserved even if a subsequent scanner error or
+// EOF arrives when the TCP socket tears down afterwards.
+func (c *Client) setTransportErrOnce(err error) {
+	if err == nil {
+		return
+	}
+	c.transportErr.CompareAndSwap(nil, &errHolder{err: err})
 }
 
 // sendCommand writes a raw JSON line to gpsd. Used for ?WATCH and ?DEVICE.
@@ -174,10 +195,10 @@ func (c *Client) Subscribe(devicePath string) *DeviceClient {
 		return dc
 	}
 	dc := &DeviceClient{
-		client:    c,
-		path:      devicePath,
-		incoming:  make(chan Frame, 16),
-		closed:    make(chan struct{}),
+		client:   c,
+		path:     devicePath,
+		incoming: make(chan Frame, 16),
+		closed:   make(chan struct{}),
 	}
 	c.subs[devicePath] = dc
 	return dc
@@ -250,7 +271,7 @@ func (c *Client) readLoop() {
 			// should Close() and reconnect if they want to
 			// continue.
 			errMsg := fmt.Errorf("gpsd ERROR: %s", head.Message)
-			c.transportErr.Store(errMsg)
+			c.setTransportErrOnce(errMsg)
 			c.subsMu.Lock()
 			for _, dc := range c.subs {
 				dc.closeOnce.Do(func() { close(dc.closed) })
@@ -276,12 +297,12 @@ func (c *Client) readLoop() {
 		}
 	}
 	if err := c.scan.Err(); err != nil {
-		c.transportErr.Store(err)
-	} else if c.transportErr.Load() == nil {
-		c.transportErr.Store(io.EOF)
+		c.setTransportErrOnce(err)
+	} else {
+		c.setTransportErrOnce(io.EOF)
 	}
 	if c.debug != nil {
-		c.debug.Printf("[gpsd] reader exit: %v", c.transportErr.Load())
+		c.debug.Printf("[gpsd] reader exit: %v", c.TransportErr())
 	}
 }
 

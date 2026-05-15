@@ -2,23 +2,19 @@
 -- log_to_linear.vhd -- Antilog lookup table: log-scale ADC code → linear power
 -- =============================================================================
 --
--- Converts the 12-bit output of an AD8318 logarithmic detector (after
--- digitisation by the AD9238) into a 24-bit signed linear power value
+-- Converts the 12-bit output of an AD8313 logarithmic detector frontend
+-- digitised by the AD9238 breakout into a 24-bit signed linear power value
 -- compatible with the existing decode pipeline's INPUT_POWER_WIDTH contract.
 --
--- The AD8318 has a negative slope (-24 mV/dB): higher input power produces
--- a lower voltage, and therefore a lower ADC code. This module performs the
--- inversion naturally in the LUT — low input codes map to high output power.
+-- The AD8313 has a positive slope: higher RF power gives higher output
+-- voltage, and the confirmed "direct code" ADC format means higher voltage
+-- gives higher FPGA ADC code.
 --
--- Implementation: a 4096-entry × 24-bit ROM inferred as block RAM. One clock
--- cycle of read latency. Replaces the 3-cycle I²+Q² path of iq_to_power.vhd
--- with no DSP48E consumption.
+-- Implementation: a 4096-entry × 24-bit ROM inferred as block RAM. One
+-- clock cycle of read latency. No DSP48E consumption.
 --
--- The LUT contents are populated from a default table that is a rough
--- placeholder antilog curve. The real table must be generated from the
--- measured AD8318 + AD8009 transfer function once hardware is available.
--- The generate_lut_table function below is documented with the assumed
--- mapping so it can be regenerated.
+-- The LUT is generated at elaboration from `generate_lut_table` using
+-- ADC-code endpoints measured by triggered FPGA capture.
 -- =============================================================================
 
 library ieee;
@@ -53,28 +49,45 @@ architecture rtl of log_to_linear is
     type lut_t is array (0 to LUT_DEPTH - 1) of std_logic_vector(OUTPUT_WIDTH-1 downto 0);
 
     -- ------------------------------------------------------------------------
-    -- Placeholder LUT generator.
+    -- LUT generator — AD8313 breakout transfer function → linear power.
     --
-    -- Assumptions (to be replaced once AD8318+AD8009 are characterised):
-    --   - ADC code 0x000  = weakest signal (lowest voltage at ADC input, which
-    --     corresponds to HIGHEST RF power due to AD8318's negative slope).
-    --     Wait — actually, after the AD8009 (likely inverting config or offset
-    --     inversion), we assume ADC code 0x000 = lowest RF power (noise floor)
-    --     and 0xFFF = highest RF power. The placeholder table here uses this
-    --     convention. If the AD8009 is non-inverting (preserving the AD8318's
-    --     negative slope), the LUT index should be reversed at table-build
-    --     time — change RAW_CODE below to (LUT_DEPTH - 1 - i).
+    -- Calibrate directly in ADC-code space. The module's advertised input
+    -- range/front-end scaling makes a bare ADC-voltage model unreliable, and
+    -- the FPGA raw capture is the signal the decoder actually consumes.
     --
-    --   - Dynamic range: 60 dB mapped across ADC codes.
-    --     dBm(code) = MIN_DBM + (code / (LUT_DEPTH - 1)) * 60
+    -- Observations so far:
+    --   * The detector is AD8313, with positive slope: higher RF power gives
+    --     higher output voltage.
+    --   * The ADC output format is direct code, and the FPGA uses D[13:2]
+    --     from the AD9238 breakout as a 12-bit unsigned sample.
+    --   * Triggered raw captures show quiet/event samples around 0x800, with
+    --     stronger samples above that. Scope measurements show quiet around
+    --     ~1.1 V and stronger ADS-B pulses up to ~1.45 V.
     --
-    --   - Linear power: 10^(dBm/10), scaled so that a mid-range "typical"
-    --     received pulse (~-70 dBm assumed) maps to ~8000 in the output, and
-    --     POWER_THRESHOLD=2000 stays a useful noise floor gate.
+    -- Measured calibration points at the detector input (1090 MHz CW),
+    -- calibrated in the actual FPGA ADC-code space consumed by the decoder:
+    --   * code ~0x904 ≈ floor (-80 dBm and weaker collapse here)
+    --   * code  0x928 ≈ -60 dBm
+    --   * code  0x96A ≈ -50 dBm
+    --   * code  0x9B9 ≈ -40 dBm
+    --   * code  0xA00 ≈ -30 dBm
+    --   * code  0xA46 ≈ -20 dBm
+    --   * code  0xA57 ≈ -18.5 dBm
+    -- Bench data at -80/-90/-100 dBm all land within a couple of codes of
+    -- ~0x904, so treat that as the practical floor of this analog chain.
+    -- Above -60 dBm the curve rises cleanly, and the strong end only begins
+    -- to bend over near the final -18.5 dBm point. Clamp below the measured
+    -- floor and above the strongest measured point rather than extrapolating.
     --
-    -- These numbers are rough placeholders — expect to regenerate from
-    -- measured captures. The math is kept in simulation-only real arithmetic
-    -- inside this function; the synthesised ROM is just the resulting table.
+    -- Output scaling:
+    --   * Target: a pulse at REF_DBM maps to REF_OUT counts.
+    --   * Out-of-range codes clamp to 0 (below noise floor) or OUT_MAX
+    --     (saturation). Saturation still produces max output so preamble
+    --     detection triggers on very strong bursts.
+    --
+    -- Polarity-agnostic math: the clamp logic works whether CODE_AT_HIGH_POWER
+    -- is numerically greater or less than CODE_AT_LOW_POWER. Flipping the
+    -- endpoints flips the LUT polarity without touching any other logic.
     -- ------------------------------------------------------------------------
     function generate_lut_table return lut_t is
         variable table     : lut_t;
@@ -82,40 +95,63 @@ architecture rtl of log_to_linear is
         variable lin       : real;
         variable scaled    : real;
         variable clamped   : integer;
-        constant MIN_DBM       : real := -90.0;   -- noise floor end
-        constant MAX_DBM       : real := -30.0;   -- strong-signal end
-        constant REF_DBM       : real := -70.0;   -- "typical pulse"
-        constant REF_OUT       : real := 8000.0;  -- target output at REF_DBM
-        constant RANGE_DBM     : real := MAX_DBM - MIN_DBM;
-        constant OUT_MAX       : integer := 2**(OUTPUT_WIDTH-1) - 1;
+
+        -- Detector calibration anchors in 12-bit FPGA ADC code space.
+        constant CAL_POINT_COUNT : positive := 6;
+        type int_array_t is array (0 to CAL_POINT_COUNT - 1) of integer;
+        type real_array_t is array (0 to CAL_POINT_COUNT - 1) of real;
+        constant CODE_FLOOR : integer := 16#904#;
+        constant CODE_POINTS : int_array_t := (
+            16#928#, 16#96A#, 16#9B9#, 16#A00#, 16#A46#, 16#A57#
+        );
+        constant DBM_POINTS : real_array_t := (
+            -60.0, -50.0, -40.0, -30.0, -20.0, -18.5
+        );
+
+        -- Output scaling.
+        constant REF_DBM    : real := -50.0;
+        constant REF_OUT    : real := 8000.0;
+        constant OUT_MAX    : integer := 2**(OUTPUT_WIDTH-1) - 1;
+
+        variable segment_idx : integer;
+        variable fraction : real;
         variable ref_lin       : real;
         variable scale_factor  : real;
-        variable raw_code      : integer;
     begin
-        -- Reference linear power at REF_DBM.
         ref_lin := 10.0 ** (REF_DBM / 10.0);
-        -- Scale so 10^(REF_DBM/10) maps to REF_OUT.
         scale_factor := REF_OUT / ref_lin;
 
         for i in 0 to LUT_DEPTH - 1 loop
-            -- Assume non-inverting AD8009 path: raw ADC code = LUT_DEPTH-1-i
-            -- would mean higher ADC code corresponds to weaker signal (AD8318
-            -- slope preserved). For a placeholder we assume the analogue stage
-            -- has been set up so ADC code rises with power. Swap to
-            -- (LUT_DEPTH - 1 - i) here if the measured polarity is the
-            -- opposite.
-            raw_code := i;
-
-            dbm := MIN_DBM + (real(raw_code) / real(LUT_DEPTH - 1)) * RANGE_DBM;
-            lin := 10.0 ** (dbm / 10.0);
-            scaled := lin * scale_factor;
-
-            if scaled > real(OUT_MAX) then
-                clamped := OUT_MAX;
-            elsif scaled < 0.0 then
+            if i <= CODE_FLOOR then
+                -- Below the weakest measured anchor — treat as below the
+                -- useful noise floor and report zero linear power.
                 clamped := 0;
+            elsif i >= CODE_POINTS(CAL_POINT_COUNT - 1) then
+                -- Past the high-power anchor — treat as saturation on the
+                -- strong side so preamble detection still fires.
+                clamped := OUT_MAX;
             else
-                clamped := integer(scaled);
+                segment_idx := 0;
+                while (segment_idx < CAL_POINT_COUNT - 2) and (i > CODE_POINTS(segment_idx + 1)) loop
+                    segment_idx := segment_idx + 1;
+                end loop;
+
+                -- Interpolate in the log domain between the two measured
+                -- anchors that bound this ADC code.
+                fraction := (real(i) - real(CODE_POINTS(segment_idx)))
+                          / real(CODE_POINTS(segment_idx + 1) - CODE_POINTS(segment_idx));
+                dbm := DBM_POINTS(segment_idx)
+                     + fraction * (DBM_POINTS(segment_idx + 1) - DBM_POINTS(segment_idx));
+                lin := 10.0 ** (dbm / 10.0);
+                scaled := lin * scale_factor;
+
+                if scaled > real(OUT_MAX) then
+                    clamped := OUT_MAX;
+                elsif scaled < 0.0 then
+                    clamped := 0;
+                else
+                    clamped := integer(scaled);
+                end if;
             end if;
 
             table(i) := std_logic_vector(to_signed(clamped, OUTPUT_WIDTH));

@@ -92,11 +92,20 @@ entity adsb_top is
         rx_valid_count     : in  unsigned(31 downto 0);
         sample_valid_count : in  unsigned(31 downto 0);
         rx_clk_count       : in  unsigned(31 downto 0);
+        raw_capture_data   : in  std_logic_vector(31 downto 0);
+        adc_code_min       : in  unsigned(31 downto 0);
+        adc_code_max       : in  unsigned(31 downto 0);
+        adc_bit_or         : in  unsigned(31 downto 0);
+        adc_bit_and        : in  unsigned(31 downto 0);
+        adc_bit_toggle     : in  unsigned(31 downto 0);
+        adc_otr_count      : in  unsigned(31 downto 0);
 
         -- =====================================================================
         -- Soft reset toggle (from AXI regs, exposed for rx-domain CDC)
         -- =====================================================================
         soft_reset_toggle_out : out std_logic;
+        sample_capture_trigger_toggle_out : out std_logic;
+        raw_capture_index_out : out unsigned(7 downto 0);
 
         -- =====================================================================
         -- Interrupt Output
@@ -194,6 +203,17 @@ architecture arch of adsb_top is
     signal debug_crc0_w1_i : std_logic_vector(31 downto 0);
     signal debug_crc0_w2_i : std_logic_vector(31 downto 0);
     signal debug_crc0_w3_i : std_logic_vector(31 downto 0);
+    signal debug_capture_word0_i : std_logic_vector(31 downto 0);
+    signal debug_capture_word1_i : std_logic_vector(31 downto 0);
+    signal debug_capture_valid_i  : std_logic;
+    signal debug_capture_trigger_i : std_logic;
+    type capture_words_t is array (0 to 127) of std_logic_vector(31 downto 0);
+    signal sample_capture_buf : capture_words_t := (others => (others => '0'));
+    signal sample_capture_word : std_logic_vector(31 downto 0) := (others => '0');
+    signal sample_capture_index_axi : unsigned(7 downto 0);
+    signal raw_capture_index_axi : unsigned(7 downto 0);
+    signal sample_capture_frozen : std_logic := '0';
+    signal sample_capture_trigger_toggle_i : std_logic := '0';
 
     -- =========================================================================
     -- Aggregator signals
@@ -246,6 +266,12 @@ architecture arch of adsb_top is
     signal holdoff_cfg_axi           : unsigned(11 downto 0);
     signal holdoff_meta              : unsigned(11 downto 0) := to_unsigned(PREAMBLE_HOLDOFF_DEFAULT, 12);
     signal holdoff_synced            : unsigned(11 downto 0) := to_unsigned(PREAMBLE_HOLDOFF_DEFAULT, 12);
+    signal message_delay_cfg_axi     : unsigned(7 downto 0);
+    signal message_delay_meta        : unsigned(7 downto 0) := to_unsigned(50, 8);
+    signal message_delay_synced      : unsigned(7 downto 0) := to_unsigned(50, 8);
+    signal output_tap_cfg_axi        : unsigned(7 downto 0);
+    signal output_tap_meta           : unsigned(7 downto 0) := to_unsigned(76, 8);
+    signal output_tap_synced         : unsigned(7 downto 0) := to_unsigned(76, 8);
 
     signal combined_reset : std_logic;
 
@@ -263,6 +289,10 @@ architecture arch of adsb_top is
     attribute ASYNC_REG of quiet_score_shift_synced : signal is "TRUE";
     attribute ASYNC_REG of snr_ratio_shift_meta : signal is "TRUE";
     attribute ASYNC_REG of snr_ratio_shift_synced : signal is "TRUE";
+    attribute ASYNC_REG of message_delay_meta : signal is "TRUE";
+    attribute ASYNC_REG of message_delay_synced : signal is "TRUE";
+    attribute ASYNC_REG of output_tap_meta : signal is "TRUE";
+    attribute ASYNC_REG of output_tap_synced : signal is "TRUE";
     attribute ASYNC_REG of snapshot_req_meta : signal is "TRUE";
     attribute ASYNC_REG of snapshot_req_sync : signal is "TRUE";
     signal auto_snapshot_count : natural range 0 to AUTO_SNAPSHOT_CYCLES-1 := 0;
@@ -318,6 +348,12 @@ architecture arch of adsb_top is
     signal rx_valid_count_snap     : unsigned(31 downto 0) := (others => '0');
     signal sample_valid_count_snap : unsigned(31 downto 0) := (others => '0');
     signal rx_clk_count_snap       : unsigned(31 downto 0) := (others => '0');
+    signal adc_code_min_snap       : unsigned(31 downto 0) := (others => '0');
+    signal adc_code_max_snap       : unsigned(31 downto 0) := (others => '0');
+    signal adc_bit_or_snap         : unsigned(31 downto 0) := (others => '0');
+    signal adc_bit_and_snap        : unsigned(31 downto 0) := (others => '0');
+    signal adc_bit_toggle_snap     : unsigned(31 downto 0) := (others => '0');
+    signal adc_otr_count_snap      : unsigned(31 downto 0) := (others => '0');
     signal core_clk_count_snap     : unsigned(31 downto 0) := (others => '0');
     signal core_in_valid_count_snap : unsigned(31 downto 0) := (others => '0');
     signal core_state_snap         : std_logic_vector(31 downto 0) := (others => '0');
@@ -351,6 +387,10 @@ begin
             snr_ratio_shift_synced   <= snr_ratio_shift_meta;
             holdoff_meta             <= holdoff_cfg_axi;
             holdoff_synced           <= holdoff_meta;
+            message_delay_meta       <= message_delay_cfg_axi;
+            message_delay_synced     <= message_delay_meta;
+            output_tap_meta          <= output_tap_cfg_axi;
+            output_tap_synced        <= output_tap_meta;
         end if;
     end process;
 
@@ -404,6 +444,8 @@ begin
             quiet_score_shift_cfg => quiet_score_shift_synced,
             snr_ratio_shift_cfg   => snr_ratio_shift_synced,
             holdoff_cfg           => holdoff_synced,
+            message_delay_cfg     => message_delay_synced,
+            output_tap_cfg        => output_tap_synced,
             debug_rpl     => debug_rpl,
             debug_edge_count => debug_edge_count_i,
             debug_som_count  => debug_som_count_i,
@@ -441,6 +483,10 @@ begin
             debug_crc0_w1 => debug_crc0_w1_i,
             debug_crc0_w2 => debug_crc0_w2_i,
             debug_crc0_w3 => debug_crc0_w3_i,
+            debug_capture_word0 => debug_capture_word0_i,
+            debug_capture_word1 => debug_capture_word1_i,
+            debug_capture_valid => debug_capture_valid_i,
+            debug_capture_trigger => debug_capture_trigger_i,
             out_messages  => dec_messages,
             out_valid     => dec_valid,
             out_toas      => dec_toas,
@@ -485,6 +531,46 @@ begin
                     agg_message(127 downto 16);       -- Strip 16-bit tag, keep 112-bit message
 
     fifo_wr_en <= agg_valid and agg_message(0) and decoder_enable_synced;  -- Only real messages, only when enabled
+
+    sample_capture_proc : process(clock)
+        variable idx : integer range 0 to 127;
+    begin
+        if rising_edge(clock) then
+            if combined_reset = '1' then
+                sample_capture_buf <= (others => (others => '0'));
+                sample_capture_frozen <= '0';
+                sample_capture_word <= (others => '0');
+            else
+                if soft_reset_synced = '1' then
+                    sample_capture_frozen <= '0';
+                elsif debug_capture_trigger_i = '1' then
+                    sample_capture_frozen <= '1';
+                end if;
+
+                if debug_capture_valid_i = '1' and sample_capture_frozen = '0' then
+                    sample_capture_buf(0 to 125) <= sample_capture_buf(2 to 127);
+                    sample_capture_buf(126) <= debug_capture_word0_i;
+                    sample_capture_buf(127) <= debug_capture_word1_i;
+                end if;
+
+                if debug_capture_trigger_i = '1' then
+                    sample_capture_trigger_toggle_i <= not sample_capture_trigger_toggle_i;
+                end if;
+
+                idx := to_integer(sample_capture_index_axi(5 downto 0));
+                if sample_capture_index_axi(6) = '1' then
+                    idx := idx + 64;
+                end if;
+                sample_capture_word <= sample_capture_buf(idx);
+                if sample_capture_index_axi(0) = '0' then
+                    sample_capture_word(31) <= sample_capture_frozen;
+                end if;
+            end if;
+        end if;
+    end process;
+
+    sample_capture_trigger_toggle_out <= sample_capture_trigger_toggle_i;
+    raw_capture_index_out <= raw_capture_index_axi;
 
     debug_counts : process(clock)
         variable do_snapshot : boolean;
@@ -579,6 +665,12 @@ begin
                 rx_valid_count_snap <= rx_valid_count;
                 sample_valid_count_snap <= sample_valid_count;
                 rx_clk_count_snap <= rx_clk_count;
+                adc_code_min_snap <= adc_code_min;
+                adc_code_max_snap <= adc_code_max;
+                adc_bit_or_snap <= adc_bit_or;
+                adc_bit_and_snap <= adc_bit_and;
+                adc_bit_toggle_snap <= adc_bit_toggle;
+                adc_otr_count_snap <= adc_otr_count;
                 core_clk_count_snap <= core_clk_count_i;
                 core_in_valid_count_snap <= core_in_valid_count_i;
                 core_state_snap <= core_state_i;
@@ -691,10 +783,22 @@ begin
             core_in_valid_count => core_in_valid_count_snap,
             core_state         => core_state_snap,
             rx_clk_count       => rx_clk_count_snap,
+            adc_code_min       => adc_code_min_snap,
+            adc_code_max       => adc_code_max_snap,
+            adc_bit_or         => adc_bit_or_snap,
+            adc_bit_and        => adc_bit_and_snap,
+            adc_bit_toggle     => adc_bit_toggle_snap,
+            adc_otr_count      => adc_otr_count_snap,
+            sample_capture_index => sample_capture_index_axi,
+            sample_capture_data => sample_capture_word,
+            raw_capture_index    => raw_capture_index_axi,
+            raw_capture_data     => raw_capture_data,
             debug_snapshot_req => debug_snapshot_req,
             quiet_score_shift_cfg => quiet_score_shift_cfg_axi,
             snr_ratio_shift_cfg   => snr_ratio_shift_cfg_axi,
             holdoff_cfg           => holdoff_cfg_axi,
+            message_delay_cfg     => message_delay_cfg_axi,
+            output_tap_cfg        => output_tap_cfg_axi,
 
             -- Control
             soft_reset     => soft_reset,

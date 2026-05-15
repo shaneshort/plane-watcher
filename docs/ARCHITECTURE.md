@@ -39,7 +39,6 @@ Implemented Go code under `ps/` provides:
 
 - register access via `/dev/mem`
 - raw AXI message decode into standard Mode-S byte order
-- radio gain and gain-mode control through IIO
 - aircraft state tracking for the local dashboard
 - Beast frame encoding
 - TCP Beast fan-out server

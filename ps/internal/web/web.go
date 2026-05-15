@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -18,7 +19,6 @@ import (
 	"github.com/plane-watcher/plane-feeder/internal/diag"
 	"github.com/plane-watcher/plane-feeder/internal/gps"
 	"github.com/plane-watcher/plane-feeder/internal/gpsmon"
-	"github.com/plane-watcher/plane-feeder/internal/radio"
 	"github.com/plane-watcher/plane-feeder/internal/tracker"
 )
 
@@ -118,12 +118,6 @@ type healthPillView struct {
 	Reason string
 }
 
-type radioBarItemView struct {
-	Label string
-	Value string
-	Class string
-}
-
 type dashboardAircraftRow struct {
 	ICAO     string
 	Callsign string
@@ -174,7 +168,6 @@ type StatsData struct {
 	CarryoverMax  int64             `json:"carryover_max"`
 	PpsTickRate   uint64            `json:"pps_interval_ticks"`
 	SkippedEdges  uint64            `json:"skipped_edges"`
-	Radio         radio.Status      `json:"radio"`
 	Debug         map[string]uint32 `json:"debug,omitempty"`
 }
 
@@ -182,32 +175,10 @@ type StatsProvider interface {
 	Stats(debug bool) StatsData
 }
 
-type RadioController interface {
-	SetGainMode(mode string) error
-	SetGain(gainDB string) error
-}
-
 type DetectorConfig interface {
 	SetQuietScoreShift(val uint32) error
 	SetSnrRatioShift(val uint32) error
 	SetHoldoff(val uint32) error
-}
-
-type GainGuardConfig struct {
-	Enabled          *bool    `json:"enabled,omitempty"`
-	MinGainDB        *float64 `json:"min_gain_db,omitempty"`
-	MaxGainDB        *float64 `json:"max_gain_db,omitempty"`
-	StepDownDB       *float64 `json:"step_down_db,omitempty"`
-	StepUpDB         *float64 `json:"step_up_db,omitempty"`
-	HotNearThreshold *uint32  `json:"hot_near,omitempty"`
-	Hot75Threshold   *uint32  `json:"hot75,omitempty"`
-	Hot87Threshold   *uint32  `json:"hot87,omitempty"`
-	HotHoldIntervals *int     `json:"hot_hold,omitempty"`
-	CalmHoldIntervals *int    `json:"calm_hold,omitempty"`
-}
-
-type GainGuardController interface {
-	ApplyConfig(cfg GainGuardConfig) error
 }
 
 type RejectedFrameProvider interface {
@@ -227,9 +198,7 @@ type GPSProvider interface {
 type Server struct {
 	tracker  *tracker.Tracker
 	stats    StatsProvider
-	radio    RadioController
 	detector DetectorConfig
-	guard    GainGuardController
 	rejected RejectedFrameProvider
 	gps      GPSProvider
 	listener net.Listener
@@ -255,18 +224,14 @@ type aircraftResponse struct {
 func New(
 	t *tracker.Tracker,
 	sp StatsProvider,
-	rc RadioController,
 	dc DetectorConfig,
-	gc GainGuardController,
 	rp RejectedFrameProvider,
 	gp GPSProvider,
 ) *Server {
 	return &Server{
 		tracker:  t,
 		stats:    sp,
-		radio:    rc,
 		detector: dc,
-		guard:    gc,
 		rejected: rp,
 		gps:      gp,
 	}
@@ -287,9 +252,6 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("GET /partials/dashboard/state", s.handleDashboardStatePartial)
 	mux.HandleFunc("GET /partials/dashboard/aircraft", s.handleDashboardAircraftPartial)
 	mux.HandleFunc("GET /partials/dashboard/watchlist", s.handleDashboardWatchlistPartial)
-	mux.HandleFunc("POST /api/radio/gain-mode", s.handleSetGainMode)
-	mux.HandleFunc("POST /api/radio/gain", s.handleSetGain)
-	mux.HandleFunc("POST /api/radio/gain-guard", s.handleSetGainGuard)
 	mux.HandleFunc("POST /api/detector/quiet-score-shift", s.handleSetQuietScoreShift)
 	mux.HandleFunc("POST /api/detector/snr-ratio-shift", s.handleSetSnrRatioShift)
 	mux.HandleFunc("POST /api/detector/holdoff", s.handleSetHoldoff)
@@ -355,6 +317,7 @@ func (s *Server) renderPage(w http.ResponseWriter, staticSub fs.FS, filename, ti
 func executeTemplateToString(name string, data any) (string, error) {
 	var buf bytes.Buffer
 	if err := pageShellTemplate.ExecuteTemplate(&buf, name, data); err != nil {
+		log.Printf("partial render failed: template=%s err=%v", name, err)
 		return "", err
 	}
 	return buf.String(), nil
@@ -490,19 +453,6 @@ func writeGaugeWithLabels(buf *bytes.Buffer, name string, labels map[string]stri
 	fmt.Fprintf(buf, " %v\n", value)
 }
 
-func parseRadioNumber(raw string) (float64, bool) {
-	raw = strings.TrimSpace(strings.TrimSuffix(raw, "dB"))
-	raw = strings.TrimSpace(strings.TrimSuffix(raw, "dBm"))
-	if raw == "" {
-		return 0, false
-	}
-	v, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return 0, false
-	}
-	return v, true
-}
-
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if s.stats == nil {
 		http.Error(w, "stats provider unavailable", http.StatusServiceUnavailable)
@@ -561,25 +511,6 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	writeGauge(&buf, "plane_watcher_pps_interval_ticks", stats.PpsTickRate)
 	writeMetricHelp(&buf, "plane_watcher_skipped_edges_total", "Skipped PPS edge count.", "counter")
 	writeGauge(&buf, "plane_watcher_skipped_edges_total", stats.SkippedEdges)
-
-	writeMetricHelp(&buf, "plane_watcher_radio_info", "Radio status labels.", "gauge")
-	writeGaugeWithLabels(&buf, "plane_watcher_radio_info", map[string]string{
-		"rx_lo":       stats.Radio.RXLO,
-		"rx_bw":       stats.Radio.RXBW,
-		"sample_rate": stats.Radio.SampleRate,
-		"gain_mode":   stats.Radio.GainMode,
-		"gain_db":     stats.Radio.GainDB,
-		"rx_port":     stats.Radio.RXPort,
-		"tuned_ok":    strconv.FormatBool(stats.Radio.TunedOK),
-	}, 1)
-	if v, ok := parseRadioNumber(stats.Radio.GainDB); ok {
-		writeMetricHelp(&buf, "plane_watcher_radio_gain_db", "Radio gain in dB.", "gauge")
-		writeGauge(&buf, "plane_watcher_radio_gain_db", v)
-	}
-	if v, ok := parseRadioNumber(stats.Radio.RSSI); ok {
-		writeMetricHelp(&buf, "plane_watcher_radio_rssi_db", "Radio RSSI in dB.", "gauge")
-		writeGauge(&buf, "plane_watcher_radio_rssi_db", v)
-	}
 
 	if len(stats.Debug) > 0 {
 		keys := make([]string, 0, len(stats.Debug))
@@ -716,37 +647,15 @@ func (s *Server) handleReceiverStatePartial(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	d := s.stats.Stats(true)
-	radio := d.Radio
 	debug := d.Debug
-	var gainValue string
-	if m := strings.TrimSpace(radio.GainDB); m != "" {
-		gainValue = m
-	} else {
-		gainValue = "—"
-	}
 	payload := struct {
 		Stats    []statView
-		Radio    []kvView
 		Detector []kvView
 	}{
 		Stats: []statView{
-			{Label: "Gain Mode", Value: blankOr(radio.GainMode)},
-			{Label: "Gain dB", Value: gainValue},
 			{Label: "Quiet Shift", Value: fmtUint32Debug(debug, "quiet_score_shift")},
 			{Label: "SNR Shift", Value: fmtUint32Debug(debug, "snr_ratio_shift")},
 			{Label: "Holdoff", Value: fmtUint32Debug(debug, "holdoff")},
-			{Label: "Guard Window", Value: fmt.Sprintf("%s–%s dB", fmtUint32Debug(debug, "auto_gain_min_db"), fmtUint32Debug(debug, "auto_gain_max_db"))},
-			{Label: "Step Down", Value: fmt.Sprintf("%s dB", fmtUint32Debug(debug, "auto_gain_step_down_db"))},
-			{Label: "Step Up", Value: fmt.Sprintf("%s dB", fmtUint32Debug(debug, "auto_gain_step_up_db"))},
-		},
-		Radio: []kvView{
-			{Key: "rx lo", Value: formatRadioHz(radio.RXLO, 0)},
-			{Key: "rx bw", Value: formatRadioHz(radio.RXBW, 1)},
-			{Key: "sample rate", Value: formatRadioHz(radio.SampleRate, 2)},
-			{Key: "gain mode", Value: blankOr(radio.GainMode)},
-			{Key: "gain", Value: gainValue},
-			{Key: "rssi", Value: blankOr(radio.RSSI)},
-			{Key: "tuned", Value: yesNo(radio.TunedOK), Class: ternary(radio.TunedOK, "good", "bad")},
 		},
 		Detector: []kvView{
 			{Key: "quiet score shift", Value: fmtUint32Debug(debug, "quiet_score_shift")},
@@ -902,7 +811,6 @@ func (s *Server) handleDashboardStatePartial(w http.ResponseWriter, r *http.Requ
 	if s.tracker != nil {
 		d.AircraftCount = s.tracker.Count()
 	}
-	radio := d.Radio
 
 	heroTitle := "Receiver Looks Healthy"
 	heroSubtitle := fmt.Sprintf("Tracking %s aircraft with %s messages per second.",
@@ -910,7 +818,7 @@ func (s *Server) handleDashboardStatePartial(w http.ResponseWriter, r *http.Requ
 	switch {
 	case d.Overflow:
 		heroTitle = "Receiver Under Pressure"
-		heroSubtitle = "FIFO overflow latched — check RF gain and decoder saturation."
+		heroSubtitle = "FIFO overflow seen recently — check RF gain and decoder saturation."
 	case !d.GpsSync && d.PPSCount == 0:
 		heroTitle = "Timing Needs Attention"
 		heroSubtitle = "No PPS activity detected — GPS discipline is offline."
@@ -922,15 +830,14 @@ func (s *Server) handleDashboardStatePartial(w http.ResponseWriter, r *http.Requ
 	}
 
 	heroMeta := []heroMetaView{
-		{Label: "Receiver", Value: fmt.Sprintf("%s / %s", formatRadioHz(radio.RXLO, 0), blankOr(radio.GainMode))},
 		{Label: "Traffic", Value: fmt.Sprintf("%s msg/s", fmtMaybeFloat(d.MsgRate, ""))},
 		{Label: "Aircraft", Value: fmt.Sprintf("%s active", formatUint64(uint64(d.AircraftCount)))},
 		{Label: "Timing", Value: ternary(d.GpsSync, "GPS disciplined", "GPS not locked")},
 	}
 
-	rfState, rfValue, rfReason := "good", "Clean", fmt.Sprintf("%s / %s", blankOr(radio.GainDB), blankOr(radio.RSSI))
+	rfState, rfValue, rfReason := "good", "Clean", "No FIFO overflow"
 	if d.Overflow {
-		rfState, rfValue, rfReason = "bad", "Overflow", "FIFO overflow latched"
+		rfState, rfValue, rfReason = "bad", "Overflow", "FIFO overflow seen in the last 10 seconds"
 	}
 
 	decodeState, decodeValue, decodeReason := "warn", "-", "-"
@@ -963,7 +870,7 @@ func (s *Server) handleDashboardStatePartial(w http.ResponseWriter, r *http.Requ
 	systemState, systemValue, systemReason := "good", "Stable", fmt.Sprintf("Uptime %s", uptimeLabel(d.Uptime))
 	switch {
 	case d.Overflow:
-		systemState, systemValue, systemReason = "bad", "Overflow", "FIFO overflow latched"
+		systemState, systemValue, systemReason = "bad", "Overflow", "FIFO overflow seen in the last 10 seconds"
 	case d.Uptime < YoungSystemUptimeS:
 		systemState = "warn"
 	}
@@ -981,15 +888,6 @@ func (s *Server) handleDashboardStatePartial(w http.ResponseWriter, r *http.Requ
 		{State: timingState, Label: "Timing", Value: timingValue, Reason: timingReason},
 		{State: systemState, Label: "System", Value: systemValue, Reason: systemReason},
 		{State: feedState, Label: "Feed", Value: feedValue, Reason: feedReason},
-	}
-
-	radioBar := []radioBarItemView{
-		{Label: "LO", Value: formatRadioHz(radio.RXLO, 0)},
-		{Label: "BW", Value: formatRadioHz(radio.RXBW, 1)},
-		{Label: "Mode", Value: blankOr(radio.GainMode)},
-		{Label: "Gain", Value: blankOr(radio.GainDB)},
-		{Label: "RSSI", Value: blankOr(radio.RSSI)},
-		{Label: "Tuned", Value: ternary(radio.TunedOK, "OK", "FAIL"), Class: ternary(radio.TunedOK, "good", "bad")},
 	}
 
 	stats := []statView{
@@ -1018,7 +916,6 @@ func (s *Server) handleDashboardStatePartial(w http.ResponseWriter, r *http.Requ
 		HeroSubtitle string
 		HeroMeta     []heroMetaView
 		Pills        []healthPillView
-		RadioBar     []radioBarItemView
 		Stats        []statView
 		GPSStats     []statView
 	}{
@@ -1026,7 +923,6 @@ func (s *Server) handleDashboardStatePartial(w http.ResponseWriter, r *http.Requ
 		HeroSubtitle: heroSubtitle,
 		HeroMeta:     heroMeta,
 		Pills:        pills,
-		RadioBar:     radioBar,
 		Stats:        stats,
 		GPSStats:     gpsStats,
 	}
@@ -1189,17 +1085,6 @@ func uptimeLabel(secs int64) string {
 	return fmt.Sprintf("%ds", s)
 }
 
-func formatRadioHz(raw string, decimals int) string {
-	if raw == "" {
-		return "—"
-	}
-	v, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return raw
-	}
-	return fmt.Sprintf("%.*f MHz", decimals, v/1e6)
-}
-
 func blankOr(v string) string {
 	if strings.TrimSpace(v) == "" {
 		return "—"
@@ -1272,7 +1157,7 @@ func (s *Server) handleGPSDetailsPartial(w http.ResponseWriter, r *http.Request)
 		{Label: "Used Sats", Value: strconv.Itoa(usedSats)},
 		{Label: "Tracked Sats", Value: strconv.Itoa(trackedSats)},
 		{Label: "PPS Count", Value: formatUint64(uint64(pps.PPSCount))},
-			{Label: "Time Acc", Value: nsUint32OrDash(snap.Clock.TimeAccuracyNs)},
+		{Label: "Time Acc", Value: nsUint32OrDash(snap.Clock.TimeAccuracyNs)},
 		{Label: "Oscillator", Value: fmtMaybeFloat(pps.OscillatorPPM, " ppm")},
 		{Label: "Skipped", Value: formatUint64(pps.SkippedEdges)},
 		{Label: "Jamming", Value: gps.JammingStateName(snap.HW.JammingState)},
@@ -1309,7 +1194,7 @@ func (s *Server) handleGPSDetailsPartial(w http.ResponseWriter, r *http.Request)
 		{Key: "alt HAE", Value: metersOrDash(snap.Fix.AltHAE)},
 		{Key: "eph", Value: metersOrDash(snap.Fix.EPH)},
 		{Key: "epv", Value: metersOrDash(snap.Fix.EPV)},
-			{Key: "leap", Value: dashIfZeroInt(snap.Fix.LeapSeconds, " s")},
+		{Key: "leap", Value: dashIfZeroInt(snap.Fix.LeapSeconds, " s")},
 	}
 	if snap.Receiver.TMODEMode == 2 {
 		locationRows = append(locationRows,
@@ -1395,30 +1280,30 @@ func (s *Server) handleGPSDetailsPartial(w http.ResponseWriter, r *http.Request)
 	}
 
 	payload := struct {
-		Stats             []statView
-		Receiver          []kvView
-		Location          []kvView
-		Clock             []kvView
-		PPS               []kvView
-		ReceiverAge       string
-		LocationAge       string
-		ClockAge          string
-		ReceiverErr       string
-		PeriodicErr       string
-		SatelliteCount    string
-		SatelliteSummary  string
-		Satellites        []gpsSatelliteRowView
+		Stats            []statView
+		Receiver         []kvView
+		Location         []kvView
+		Clock            []kvView
+		PPS              []kvView
+		ReceiverAge      string
+		LocationAge      string
+		ClockAge         string
+		ReceiverErr      string
+		PeriodicErr      string
+		SatelliteCount   string
+		SatelliteSummary string
+		Satellites       []gpsSatelliteRowView
 	}{
-		Stats:            stats,
-		Receiver:         receiverRows,
-		Location:         locationRows,
-		Clock:            clockRows,
-		PPS:              ppsRows,
-		ReceiverAge:      ageLabel(snap.ReceiverAt),
-		LocationAge:      ageLabel(snap.FixAt),
-		ClockAge:         ageLabel(snap.PeriodicAt),
-		ReceiverErr:      snap.ReceiverErr,
-		PeriodicErr:      snap.PeriodicErr,
+		Stats:       stats,
+		Receiver:    receiverRows,
+		Location:    locationRows,
+		Clock:       clockRows,
+		PPS:         ppsRows,
+		ReceiverAge: ageLabel(snap.ReceiverAt),
+		LocationAge: ageLabel(snap.FixAt),
+		ClockAge:    ageLabel(snap.PeriodicAt),
+		ReceiverErr: snap.ReceiverErr,
+		PeriodicErr: snap.PeriodicErr,
 		// Match the dashboard partial pattern: emit the count only when
 		// non-zero so the section header collapses cleanly when idle.
 		SatelliteCount:   ternary(trackedSats > 0, strconv.Itoa(trackedSats), ""),
@@ -1493,7 +1378,7 @@ func fixModeClass(n int) string {
 	return "bad"
 }
 
-func nsInt32OrDash(v int32) string { return dashIfZeroInt64(int64(v), " ns") }
+func nsInt32OrDash(v int32) string       { return dashIfZeroInt64(int64(v), " ns") }
 func nsPerSecInt32OrDash(v int32) string { return dashIfZeroInt64(int64(v), " ns/s") }
 func nsUint32OrDash(v uint32) string {
 	if v == 0 {
@@ -1578,72 +1463,6 @@ func minFloat(a, b float64) float64 {
 		return a
 	}
 	return b
-}
-
-func (s *Server) handleSetGainMode(w http.ResponseWriter, r *http.Request) {
-	if s.radio == nil {
-		http.Error(w, "radio not available", http.StatusServiceUnavailable)
-		return
-	}
-	var req struct {
-		Mode string `json:"mode"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	if req.Mode == "" {
-		http.Error(w, `missing "mode" field`, http.StatusBadRequest)
-		return
-	}
-	if err := s.radio.SetGainMode(req.Mode); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"gain_mode": req.Mode})
-}
-
-func (s *Server) handleSetGain(w http.ResponseWriter, r *http.Request) {
-	if s.radio == nil {
-		http.Error(w, "radio not available", http.StatusServiceUnavailable)
-		return
-	}
-	var req struct {
-		GainDB string `json:"gain_db"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	if req.GainDB == "" {
-		http.Error(w, `missing "gain_db" field`, http.StatusBadRequest)
-		return
-	}
-	if err := s.radio.SetGain(req.GainDB); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"gain_mode": "manual", "gain_db": req.GainDB})
-}
-
-func (s *Server) handleSetGainGuard(w http.ResponseWriter, r *http.Request) {
-	if s.guard == nil {
-		http.Error(w, "gain guard not available", http.StatusServiceUnavailable)
-		return
-	}
-	var req GainGuardConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	if err := s.guard.ApplyConfig(req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(req)
 }
 
 func (s *Server) handleSetQuietScoreShift(w http.ResponseWriter, r *http.Request) {

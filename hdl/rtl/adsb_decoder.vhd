@@ -67,6 +67,8 @@ entity adsb_decoder is
     quiet_score_shift_cfg : in unsigned(2 downto 0);
     snr_ratio_shift_cfg   : in unsigned(2 downto 0);
     holdoff_cfg           : in unsigned(11 downto 0);
+    message_delay_cfg     : in unsigned(7 downto 0);
+    output_tap_cfg        : in unsigned(7 downto 0);
 
     debug_rpl       :   out signed(INPUT_POWER_WIDTH-1 downto 0) ;     -- Debug: current RPL from preamble detector
     debug_edge_count :  out unsigned(31 downto 0) ;
@@ -105,6 +107,10 @@ entity adsb_decoder is
     debug_crc0_w1 : out std_logic_vector(31 downto 0);
     debug_crc0_w2 : out std_logic_vector(31 downto 0);
     debug_crc0_w3 : out std_logic_vector(31 downto 0);
+    debug_capture_word0 : out std_logic_vector(31 downto 0);
+    debug_capture_word1 : out std_logic_vector(31 downto 0);
+    debug_capture_valid  : out std_logic;
+    debug_capture_trigger : out std_logic;
 
     out_messages    :   out messages_t(NUM_DECODERS-1 downto 0) ;      -- Decoded messages from all decoders
     out_valid       :   out std_logic_vector(NUM_DECODERS-1 downto 0) ;-- Per-decoder message valid flags
@@ -125,6 +131,7 @@ architecture arch of adsb_decoder is
 
     signal det_power        :   signed(INPUT_POWER_WIDTH-1 downto 0) ;   -- Preamble detector → decoders: power
     signal det_valid        :   std_logic ;                               -- Preamble detector → decoders: valid
+    signal det_preamble     :   std_logic ;                               -- Preamble detector pulse for capture/debug
 
     signal det_som          :   std_logic_vector(NUM_DECODERS-1 downto 0) ;  -- Per-decoder Start-Of-Message
     signal det_rpl          :   signed(INPUT_POWER_WIDTH-1 downto 0) ;       -- Reference Power Level for current message
@@ -205,6 +212,9 @@ architecture arch of adsb_decoder is
 
 begin
 
+    debug_capture_valid <= det_valid;
+    debug_capture_trigger <= det_preamble;
+
     -- =========================================================================
     -- Stage 1: Edge Detector
     -- Detects rising edges in the power signal with threshold qualification.
@@ -239,8 +249,6 @@ begin
     U_preamble_detector : entity work.preamble_detector
       generic map (
         NUM_MESSAGE_DECODER =>  NUM_DECODERS,
-        MESSAGE_DELAY_G     =>  PREAMBLE_MESSAGE_DELAY,
-        OUTPUT_TAP_G        =>  PREAMBLE_OUTPUT_TAP,
         ENABLE_DEEP_DEBUG   =>  ENABLE_DEEP_DEBUG
       ) port map (
         clock           =>  clock,
@@ -256,6 +264,8 @@ begin
         quiet_score_shift_cfg => quiet_score_shift_cfg,
         snr_ratio_shift_cfg   => snr_ratio_shift_cfg,
         holdoff_cfg           => holdoff_cfg,
+        message_delay_cfg     => message_delay_cfg,
+        output_tap_cfg        => output_tap_cfg,
 
         power_out       =>  det_power,
         out_valid       =>  det_valid,
@@ -274,8 +284,11 @@ begin
         debug_holdoff_count => debug_preamble_holdoff_count_i,
         debug_peak_age => debug_preamble_peak_age_i,
         debug_no_free_count => debug_preamble_no_free_count_i,
-        debug_busy_drop_count => debug_preamble_busy_drop_count_i
-      ) ;
+        debug_busy_drop_count => debug_preamble_busy_drop_count_i,
+        debug_detect_pulse => det_preamble,
+        debug_capture_word0 => debug_capture_word0,
+        debug_capture_word1 => debug_capture_word1
+    ) ;
 
     -- =========================================================================
     -- Stage 3: Parallel Message Decoders (×NUM_DECODERS)

@@ -67,9 +67,11 @@ architecture rtl of async_msg_fifo is
     signal empty_i             : std_logic := '1';
     signal rd_data_i           : std_logic_vector(WIDTH-1 downto 0) := (others => '0');
 
-    signal overflow_w          : std_logic := '0';
-    signal overflow_sync1_r    : std_logic := '0';
-    signal overflow_sync2_r    : std_logic := '0';
+    signal overflow_toggle_w       : std_logic := '0';
+    signal overflow_toggle_sync1_r : std_logic := '0';
+    signal overflow_toggle_sync2_r : std_logic := '0';
+    signal overflow_toggle_prev_r  : std_logic := '0';
+    signal overflow_pulse_r        : std_logic := '0';
 
     function bin_to_gray(v : unsigned) return unsigned is
     begin
@@ -93,7 +95,7 @@ begin
     full  <= full_i;
     empty <= empty_i;
     count <= resize(wr_ptr_bin_sync_r - rd_ptr_bin, count'length);
-    overflow <= overflow_sync2_r;
+    overflow <= overflow_pulse_r;
 
     -- Synchronize read pointer into write clock domain.
     process(wr_clock, reset)
@@ -109,21 +111,25 @@ begin
         end if;
     end process;
 
-    -- Synchronize write pointer and overflow flag into read clock domain.
+    -- Synchronize write pointer and overflow-event toggle into read clock domain.
     process(rd_clock, reset)
     begin
         if reset = '1' then
             wr_ptr_gray_sync1_r <= (others => '0');
             wr_ptr_gray_sync2_r <= (others => '0');
             wr_ptr_bin_sync_r   <= (others => '0');
-            overflow_sync1_r    <= '0';
-            overflow_sync2_r    <= '0';
+            overflow_toggle_sync1_r <= '0';
+            overflow_toggle_sync2_r <= '0';
+            overflow_toggle_prev_r  <= '0';
+            overflow_pulse_r        <= '0';
         elsif rising_edge(rd_clock) then
             wr_ptr_gray_sync1_r <= wr_ptr_gray;
             wr_ptr_gray_sync2_r <= wr_ptr_gray_sync1_r;
             wr_ptr_bin_sync_r   <= gray_to_bin(wr_ptr_gray_sync2_r);
-            overflow_sync1_r    <= overflow_w;
-            overflow_sync2_r    <= overflow_sync1_r;
+            overflow_toggle_sync1_r <= overflow_toggle_w;
+            overflow_toggle_sync2_r <= overflow_toggle_sync1_r;
+            overflow_pulse_r        <= overflow_toggle_sync2_r xor overflow_toggle_prev_r;
+            overflow_toggle_prev_r  <= overflow_toggle_sync2_r;
         end if;
     end process;
 
@@ -136,7 +142,7 @@ begin
             wr_ptr_bin  <= (others => '0');
             wr_ptr_gray <= (others => '0');
             full_i      <= '0';
-            overflow_w  <= '0';
+            overflow_toggle_w <= '0';
         elsif rising_edge(wr_clock) then
             wr_ptr_next_bin := wr_ptr_bin;
 
@@ -147,7 +153,7 @@ begin
                     wr_ptr_bin <= wr_ptr_next_bin;
                     wr_ptr_gray <= bin_to_gray(wr_ptr_next_bin);
                 else
-                    overflow_w <= '1';
+                    overflow_toggle_w <= not overflow_toggle_w;
                 end if;
             end if;
 

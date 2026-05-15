@@ -5,13 +5,6 @@
   </div>{{end}}
 </div>
 <div class="rounded-2xl border border-border bg-surface-2/60 p-4">
-  <div class="mb-2 text-[0.78rem] font-bold uppercase tracking-[0.08em] text-brand-soft">Radio State</div>
-  <div class="pw-kv">{{range .Radio}}
-    <div class="pw-k">{{.Key}}</div>
-    <div class="pw-v{{if .Class}} {{.Class}}{{end}}">{{.Value}}</div>{{end}}
-  </div>
-</div>
-<div class="rounded-2xl border border-border bg-surface-2/60 p-4">
   <div class="mb-2 text-[0.78rem] font-bold uppercase tracking-[0.08em] text-brand-soft">Detector State</div>
   <div class="pw-kv">{{range .Detector}}
     <div class="pw-k">{{.Key}}</div>

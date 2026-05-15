@@ -37,6 +37,12 @@ var dbgGroups = []dbgGroup{
 			{regs.DbgRawPowerSatCt, "RAW_POWER_SAT_CT", "pre-downsample scalar power samples near ceiling", false},
 			{regs.DbgSampleFifoOvfCt, "SAMPLE_FIFO_OVF_CT", "samples dropped because the RX-to-core sample FIFO was full", false},
 			{regs.DbgRawPowerThrCt, "RAW_POWER_THR_CT", "pre-downsample samples above main power threshold", false},
+			{regs.DbgAdcCodeMin, "ADC_CODE_MIN", "minimum raw ADC code seen since reset", true},
+			{regs.DbgAdcCodeMax, "ADC_CODE_MAX", "maximum raw ADC code seen since reset", true},
+			{regs.DbgAdcBitOr, "ADC_BIT_OR", "raw ADC bits that have ever been 1 since reset", true},
+			{regs.DbgAdcBitAnd, "ADC_BIT_AND", "raw ADC bits that have always been 1 since reset", true},
+			{regs.DbgAdcBitToggle, "ADC_BIT_TOGGLE", "raw ADC bits that toggled since reset", true},
+			{regs.DbgAdcOtrCt, "ADC_OTR_CT", "ADC out-of-range assertions since reset", false},
 			{regs.DbgPowerMax, "POWER_MAX", "peak scalar power seen at decoder input", false},
 			{regs.DbgEdgeThrCt, "EDGE_THR_CT", "samples above edge threshold", false},
 			{regs.DbgPowerThrCt, "POWER_THR_CT", "samples above main power threshold", false},
@@ -127,6 +133,12 @@ var csvDbgEntries = []dbgEntry{
 	{regs.DbgRawPowerSatCt, "RAW_POWER_SAT_CT", "", false},
 	{regs.DbgSampleFifoOvfCt, "SAMPLE_FIFO_OVF_CT", "", false},
 	{regs.DbgRawPowerThrCt, "RAW_POWER_THR_CT", "", false},
+	{regs.DbgAdcCodeMin, "ADC_CODE_MIN", "", false},
+	{regs.DbgAdcCodeMax, "ADC_CODE_MAX", "", false},
+	{regs.DbgAdcBitOr, "ADC_BIT_OR", "", false},
+	{regs.DbgAdcBitAnd, "ADC_BIT_AND", "", false},
+	{regs.DbgAdcBitToggle, "ADC_BIT_TOGGLE", "", false},
+	{regs.DbgAdcOtrCt, "ADC_OTR_CT", "", false},
 	{regs.DbgPowerMax, "POWER_MAX", "", false},
 	{regs.DbgEdgeThrCt, "EDGE_THR_CT", "", false},
 	{regs.DbgPowerThrCt, "POWER_THR_CT", "", false},
@@ -167,9 +179,11 @@ func printDbgEntry(r regs.RegisterReader, e dbgEntry) {
 	val := regs.ReadDbg(r, e.index)
 	if e.hex {
 		fmt.Printf("  %-14s  %-44s  %s\n", e.name, fmt.Sprintf("raw=0x%08X", val), e.desc)
-		fmt.Printf("  %-14s  %-44v  %s\n", "", val&1 != 0, "reset")
-		fmt.Printf("  %-14s  %-44v  %s\n", "", val&2 != 0, "enable")
-		fmt.Printf("  %-14s  %-44v  %s\n", "", val&4 != 0, "in_valid")
+		if e.name == "CORE_STATE" {
+			fmt.Printf("  %-14s  %-44v  %s\n", "", val&1 != 0, "reset")
+			fmt.Printf("  %-14s  %-44v  %s\n", "", val&2 != 0, "enable")
+			fmt.Printf("  %-14s  %-44v  %s\n", "", val&4 != 0, "in_valid")
+		}
 		return
 	}
 	fmt.Printf("  %-14s  %-44d  %s\n", e.name, val, e.desc)
@@ -182,71 +196,6 @@ func readCandidateWords(r regs.RegisterReader) [4]uint32 {
 		regs.ReadDbg(r, regs.DbgCrc0W2),
 		regs.ReadDbg(r, regs.DbgCrc0W3),
 	}
-}
-
-type radioAttr struct {
-	label    string
-	paths    []string
-	expected string
-}
-
-type radioSetting struct {
-	path  string
-	value string
-}
-
-func readSysfsTrimmed(paths ...string) string {
-	var lastErr error
-	for _, path := range paths {
-		b, err := os.ReadFile(path)
-		if err == nil {
-			return strings.TrimSpace(string(b))
-		}
-		lastErr = err
-	}
-	return fmt.Sprintf("ERROR: %v", lastErr)
-}
-
-func printRadioSettings() {
-	attrs := []radioAttr{
-		{"RX_LO", []string{"/sys/bus/iio/devices/iio:device0/out_altvoltage0_RX_LO_frequency"}, "1090000000"},
-		{"RX_BW", []string{
-			"/sys/bus/iio/devices/iio:device0/in_voltage_rf_bandwidth",
-			"/sys/bus/iio/devices/iio:device0/in_voltage0_rf_bandwidth",
-		}, "2000000"},
-		{"SAMP_RATE", []string{
-			"/sys/bus/iio/devices/iio:device0/in_voltage_sampling_frequency",
-			"/sys/bus/iio/devices/iio:device0/in_voltage0_sampling_frequency",
-		}, "30720000"},
-		{"GAIN_MODE", []string{"/sys/bus/iio/devices/iio:device0/in_voltage0_gain_control_mode"}, "manual/slow_attack"},
-		{"GAIN_DB", []string{"/sys/bus/iio/devices/iio:device0/in_voltage0_hardwaregain"}, "(context dependent)"},
-		{"RX_PORT", []string{"/sys/bus/iio/devices/iio:device0/in_voltage0_rf_port_select"}, "A_BALANCED"},
-	}
-
-	fmt.Println("Radio")
-	for _, a := range attrs {
-		got := readSysfsTrimmed(a.paths...)
-		status := ""
-		if !strings.HasPrefix(got, "ERROR:") {
-			switch a.label {
-			case "GAIN_MODE":
-				if got != "manual" && got != "slow_attack" {
-					status = "  unexpected"
-				}
-			case "GAIN_DB":
-				// No hard fail here; we just print the current value.
-			default:
-				if got != a.expected {
-					status = "  mismatch"
-				}
-			}
-		}
-		fmt.Printf("  %-14s  %-44s  expected=%s%s\n", a.label, got, a.expected, status)
-	}
-}
-
-func writeSysfs(path string, value string) error {
-	return os.WriteFile(path, []byte(value), 0o644)
 }
 
 func pulseControl(r regs.RegisterReader, bit uint32) {
@@ -264,35 +213,9 @@ func resetDecoder(r regs.RegisterReader) {
 	time.Sleep(5 * time.Millisecond)
 }
 
-func readRadioValue(label string) string {
-	switch label {
-	case "RX_LO":
-		return readSysfsTrimmed("/sys/bus/iio/devices/iio:device0/out_altvoltage0_RX_LO_frequency")
-	case "RX_BW":
-		return readSysfsTrimmed(
-			"/sys/bus/iio/devices/iio:device0/in_voltage_rf_bandwidth",
-			"/sys/bus/iio/devices/iio:device0/in_voltage0_rf_bandwidth",
-		)
-	case "SAMP_RATE":
-		return readSysfsTrimmed(
-			"/sys/bus/iio/devices/iio:device0/in_voltage_sampling_frequency",
-			"/sys/bus/iio/devices/iio:device0/in_voltage0_sampling_frequency",
-		)
-	case "GAIN_MODE":
-		return readSysfsTrimmed("/sys/bus/iio/devices/iio:device0/in_voltage0_gain_control_mode")
-	case "GAIN_DB":
-		return readSysfsTrimmed("/sys/bus/iio/devices/iio:device0/in_voltage0_hardwaregain")
-	case "RSSI":
-		return readSysfsTrimmed("/sys/bus/iio/devices/iio:device0/in_voltage0_rssi")
-	default:
-		return ""
-	}
-}
-
 func csvHeader() string {
 	cols := []string{
 		"ts_unix_ns", "status", "not_empty", "full", "overflow", "fill",
-		"rx_lo", "rx_bw", "samp_rate", "gain_mode", "gain_db", "rssi",
 	}
 	for _, e := range csvDbgEntries {
 		cols = append(cols, strings.ToLower(e.name))
@@ -311,12 +234,6 @@ func csvRow(r regs.RegisterReader, now time.Time) string {
 		strconv.FormatBool(status&regs.StatusFull != 0),
 		strconv.FormatBool(status&regs.StatusOverflow != 0),
 		strconv.FormatUint(uint64(fillCount), 10),
-		readRadioValue("RX_LO"),
-		readRadioValue("RX_BW"),
-		readRadioValue("SAMP_RATE"),
-		readRadioValue("GAIN_MODE"),
-		readRadioValue("GAIN_DB"),
-		readRadioValue("RSSI"),
 	}
 
 	for _, e := range csvDbgEntries {
@@ -325,28 +242,10 @@ func csvRow(r regs.RegisterReader, now time.Time) string {
 	return strings.Join(cols, ",")
 }
 
-func retuneRadio() error {
-	settings := []radioSetting{
-		{"/sys/bus/iio/devices/iio:device0/out_altvoltage0_RX_LO_frequency", "1090000000"},
-		{"/sys/bus/iio/devices/iio:device0/in_voltage_rf_bandwidth", "2000000"},
-		{"/sys/bus/iio/devices/iio:device0/in_voltage_sampling_frequency", "30720000"},
-		{"/sys/bus/iio/devices/iio:device0/in_voltage0_gain_control_mode", "manual"},
-		{"/sys/bus/iio/devices/iio:device0/in_voltage0_hardwaregain", "54"},
-	}
-
-	for _, s := range settings {
-		if err := writeSysfs(s.path, s.value); err != nil {
-			return fmt.Errorf("write %s=%s: %w", s.path, s.value, err)
-		}
-	}
-	return nil
-}
-
 func main() {
-	baseAddr := flag.Uint64("base-addr", 0x43D00000, "AXI register base address")
+	baseAddr := flag.Uint64("base-addr", 0x43C03000, "AXI register base address")
 	pop := flag.Bool("pop", false, "read RPL register (pops one FIFO entry)")
 	reset := flag.Bool("reset", false, "pulse the decoder soft reset before dumping")
-	retune := flag.Bool("retune", false, "set Pluto RX to 1090 MHz / 2 MHz BW / 30.72 MSPS / manual 60 dB before dumping")
 	csvMode := flag.Bool("csv", false, "emit CSV metrics instead of the human-readable dump")
 	snapshot := flag.Bool("snapshot", false, "force an immediate debug snapshot before reading counters (the FPGA also refreshes snapshots periodically)")
 	interval := flag.Duration("interval", time.Second, "CSV sample interval")
@@ -364,14 +263,6 @@ func main() {
 		os.Exit(1)
 	}
 	defer r.Close()
-
-	if *retune {
-		if err := retuneRadio(); err != nil {
-			fmt.Fprintf(os.Stderr, "error: retune failed: %v\n", err)
-			os.Exit(1)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
 
 	if *reset {
 		resetDecoder(r)
@@ -414,11 +305,13 @@ func main() {
 
 	// CONFIG
 	cfg := r.Read32(regs.RegConfig)
-	fmt.Printf("CONFIG      (0x3C): 0x%08X  quiet_score_shift=%d snr_ratio_shift=%d holdoff=%d\n",
+	fmt.Printf("CONFIG      (0x3C): 0x%08X  quiet_score_shift=%d snr_ratio_shift=%d holdoff=%d message_delay=%d output_tap=%d\n",
 		cfg,
 		cfg&regs.ConfigQuietScoreShiftMask,
 		(cfg&regs.ConfigSnrRatioShiftMask)>>3,
-		(cfg&regs.ConfigHoldoffMask)>>regs.ConfigHoldoffShift)
+		(cfg&regs.ConfigHoldoffMask)>>regs.ConfigHoldoffShift,
+		(cfg&regs.ConfigMessageDelayMask)>>regs.ConfigMessageDelayShift,
+		(cfg&regs.ConfigOutputTapMask)>>regs.ConfigOutputTapShift)
 
 	// STATUS
 	status := r.Read32(regs.RegStatus)
@@ -434,8 +327,6 @@ func main() {
 	fmt.Printf("PPS_COUNT   (0x20): %d\n", pps.Count)
 	fmt.Printf("PPS_CTR     (0x24): 0x%016X  (%d)\n", pps.CounterAtPps(), pps.CounterAtPps())
 
-	fmt.Println("─────────────────────────────────────────────────────")
-	printRadioSettings()
 	fmt.Println("─────────────────────────────────────────────────────")
 	fmt.Println("Debug Pipeline")
 	fmt.Println("  key            value                                         meaning")

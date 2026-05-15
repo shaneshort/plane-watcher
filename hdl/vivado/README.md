@@ -1,7 +1,7 @@
 # Vivado Integration
 
 This directory contains the active Vivado integration flow for the current
-Zynq-7020 board target.
+Smart ZYNQ SL / Zynq-7020 board target.
 
 ## What This Is
 
@@ -9,35 +9,38 @@ Zynq-7020 board target.
 - a Vivado batch script that creates a project
 - a synthesis batch script
 - a top-level wrapper suitable for module import / IP Integrator use
-- a constraints template for clocks and future pin assignment
+- board constraints for the active Smart ZYNQ phase-1 firmware
 
 ## Current State
 
-- produces working hardware bitstreams for the current board
-- contains both staged Makefile targets and single-session build TCL flows
-- keeps the PS/PL AXI address assignment at `0x43D00000`
-- still depends on a vendor HDL checkout for the hybrid AD936x design
+- produces the Smart ZYNQ phase-1 bitstream and XSA consumed by Petalinux
+- keeps the PS/PL AXI address assignment at `0x43C00000`
+- does not depend on the old Pluto/vendor HDL flow for the active firmware
 
 ## Entry Points
 
-Repo-level wrappers for the common flow live under `tools/`:
+Repo-level wrappers for the active firmware flow live under `tools/`:
 
 ```bash
 cp tools/plane_watcher.env.example tools/plane_watcher.env
 $EDITOR tools/plane_watcher.env
-./tools/build-bitstream.sh --skip-deploy
-./tools/deploy-bitstream.sh
+./tools/rebuild.sh --no-deploy
 ```
 
-To package the `.bit.bin` locally without pushing it to a board:
+To rebuild only the Vivado bitstream/XSA and repackage `BOOT.BIN`:
 
 ```bash
-./tools/deploy-bitstream.sh --generate-only
+./tools/rebuild.sh --bitstream --no-deploy
 ```
 
-The lower-level `make` targets in this directory are still the source of truth
-for the Vivado flow and are useful when iterating on timing or debugging a
-specific stage.
+The lower-level phase-1 TCL is the source of truth for the active Vivado flow:
+
+```bash
+./tools/build-smartzynq-phase1.sh
+```
+
+The older `make` targets and vendor/stock-tap TCL files are retained as legacy
+bring-up references, not as the active firmware path.
 
 Generated artifacts from local Vivado runs are intentionally ignored in git.
 The tracked files here are the TCL, constraints, Makefile, and checked-in
@@ -133,38 +136,24 @@ What still remains after that:
 
 The hybrid vendor-RX script is intentionally partial. It recreates the PS,
 AD936x RX-side datapath, and our decoder wrapper in one BD, but it does not
-attempt to mirror every part of the vendor control-plane design. It is not
-the active integration path; see the stock-tap flow below.
+attempt to mirror every part of the vendor control-plane design. It is retained
+as a historical reference, not as the active integration path.
 
-## Active Build Flow: stock-tap
+## Active Build Flow: Smart ZYNQ Phase 1
 
-The stock-tap flow (`build_stock_tap.tcl`) is the active integration path.
-It sources the vendor Pluto BD (`system_bd.tcl`), then taps in the ADS-B
-decoder wrapper, PPS input, and GPS UART0 EMIO on top.
+The active firmware path is `tools/rebuild.sh`, which runs
+`tools/build-smartzynq-phase1.sh` and then packages the generated XSA through
+Petalinux.
 
-Board-pin constraints for the stock-tap additions live in:
+The only hand-authored XDC files used by this path are:
 
-- [constr/plane_watcher_stock_tap_io.xdc](/home/shanes/plane_watcher/hdl/vivado/constr/plane_watcher_stock_tap_io.xdc)
-  (PPS and UART0 pin assignments on JP5, Bank 13)
+- [constr/smartzynq_phase1_io.xdc](/home/shanes/plane_watcher/hdl/vivado/constr/smartzynq_phase1_io.xdc)
+  for UART, GPS PPS, and Ethernet pin/timing constraints
+- [constr/smartzynq_adc_io.xdc](/home/shanes/plane_watcher/hdl/vivado/constr/smartzynq_adc_io.xdc)
+  for the AD9238 log-detector frontend pins
 
-The AD936x interface constraints come from the vendor `system_constr.xdc`
-(copied and patched at build time with a relaxed 8 ns rx_clk period).
-
-## Constraint Layering Note
-
-The `stock-tap-build` flow has two constraint layers:
-
-- board-pin assignments (PPS, UART0) in the stock-tap IO XDC above
-- CDC false-path exceptions and debug counter crossings in
-  [constr/plane_watcher_post_impl_overrides.tcl](/home/shanes/plane_watcher/hdl/vivado/constr/plane_watcher_post_impl_overrides.tcl)
-
-`build_stock_tap.tcl` sources the post-impl override file during the
-implementation run and again before generating the signoff timing report. In
-practice, that means new rx-domain debug counters that are snapshotted into
-`S_AXI_ACLK` must be added to the post-impl override file as well as the XDC.
-Updating only the XDC can leave the same `rx_clk -> clk_fpga_0` path visible
-in `impl_timing_summary_post_override.rpt`, with unchanged WNS/TNS after a
-rebuild.
+Generated IP and block-design XDC files under `build/` are owned by Vivado and
+are not tracked as source constraints.
 
 ## Hybrid Control Notes
 
@@ -183,7 +172,7 @@ facts for the current 7020 AD936x hardware revision:
 - The ADI device-tree binding also states that `ENABLE/TXNRX` control ENSM
   state, with the default control path being SPI writes.
 
-Current repo policy for the stock-tap BD:
+Historical repo policy for the stock-tap BD:
 
 - keep external board pins for `enable` and `txnrx`
 - do not expose `up_enable` or `up_txnrx` as external top-level pins

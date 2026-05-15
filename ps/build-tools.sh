@@ -22,7 +22,6 @@ CMDS=(
   regdump
   regpeek
   replay
-  sweep-gain
   tune-detector
   watch-stats
 )

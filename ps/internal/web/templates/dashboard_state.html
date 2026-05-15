@@ -19,7 +19,6 @@
     </article>{{end}}
   </div>
 </section>
-<div class="pw-radio-bar">{{range $i, $it := .RadioBar}}{{if $i}} | {{end}}{{$it.Label}}: <span{{if $it.Class}} class="{{$it.Class}}"{{end}}>{{$it.Value}}</span>{{end}}</div>
 <div class="pw-stat-grid">{{range .Stats}}
   <div class="pw-stat">
     <div class="pw-stat-label">{{.Label}}</div>

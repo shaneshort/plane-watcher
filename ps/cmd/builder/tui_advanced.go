@@ -89,9 +89,9 @@ func (m *advancedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *advancedModel) View() string {
 	var b strings.Builder
-	b.WriteString(headingStyle.Render("advanced — effective config"))
+	b.WriteString(styleHeading.Render("advanced — effective config"))
 	b.WriteString("\n")
-	b.WriteString(hintStyle.Render(m.cfg.PlaneWatcherEnv))
+	b.WriteString(styleHint.Render(m.cfg.PlaneWatcherEnv))
 	b.WriteString("\n\n")
 	for i, k := range m.keys {
 		cursor := "  "
@@ -106,7 +106,7 @@ func (m *advancedModel) View() string {
 		b.WriteString("_\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("[enter] edit  [w] write back to plane_watcher.env  [q] back"))
+	b.WriteString(styleHint.Render("[enter] edit  [w] write back to plane_watcher.env  [q] back"))
 	return b.String()
 }
 

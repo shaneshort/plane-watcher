@@ -112,11 +112,13 @@ cpp -nostdinc \
     "$KERNEL_DTS_DIR/$(basename "$DTS_INPUT")" \
     "$PREPROCESSED"
 
-# Step 2: Compile to DTB.
-dtc -I dts -O dtb \
-    -o "$DTB_OUTPUT" \
-    -@ \
-    "$PREPROCESSED"
+# Step 2: Compile to DTB, renaming the bus node from "axi" to "amba" to match
+# the convention the kernel and existing device trees expect. This mirrors the
+# sed fixup in the firmware Makefile's DTB rule.
+dtc -I dts -O dtb -@ "$PREPROCESSED" \
+  | dtc -q -I dtb -O dts -@ - \
+  | sed -e 's/axi {/amba {/g' -e 's|/axi/|/amba/|g' \
+  | dtc -q -I dts -O dtb -@ -o "$DTB_OUTPUT" -
 
 echo "DTB built: $DTB_OUTPUT"
 md5sum "$DTB_OUTPUT"

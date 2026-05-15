@@ -19,6 +19,10 @@ VIVADO_SETTINGS="${VIVADO_SETTINGS:-/opt/vivado/2025.2/Vivado/settings64.sh}"
 PROJECT_DIR="${PROJECT_DIR:-$REPO_ROOT/build/smartzynq/vivado}"
 BASE_ADDR="${BASE_ADDR:-0x43C00000}"
 JOBS="${JOBS:-$(nproc)}"
+# ADC encode clock (MHz). Must match logdet_pkg.ENCODE_CLK_HZ. Conservative
+# default for breadboard bring-up; raise to 65.0 once signal integrity is
+# validated on the daughterboard.
+ENCODE_MHZ="${ENCODE_MHZ:-16.000}"
 
 if [[ ! -f "$VIVADO_SETTINGS" ]]; then
   echo "error: Vivado settings script not found: $VIVADO_SETTINGS" >&2
@@ -35,7 +39,7 @@ pushd "$REPO_ROOT/hdl/vivado" >/dev/null
 
 vivado -mode batch \
   -source build_smartzynq_phase1.tcl \
-  -tclargs "$PROJECT_DIR" "$BASE_ADDR" "$JOBS" \
+  -tclargs "$PROJECT_DIR" "$BASE_ADDR" "$JOBS" "$ENCODE_MHZ" \
   -log "$PROJECT_DIR/vivado.log" \
   -journal "$PROJECT_DIR/vivado.jou" \
   2>&1 | tee "$PROJECT_DIR/build.log"

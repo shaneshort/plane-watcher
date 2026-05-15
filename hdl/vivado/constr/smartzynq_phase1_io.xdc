@@ -11,6 +11,13 @@
 set_property -dict {PACKAGE_PIN L17 IOSTANDARD LVCMOS33} [get_ports UART_0_txd]
 set_property -dict {PACKAGE_PIN M17 IOSTANDARD LVCMOS33} [get_ports UART_0_rxd]
 
+# GPS receiver on spare J5 / Bank 35 header pins (3.3 V fixed). UART naming is
+# from the PS perspective: GPS_UART_txd goes to the GPS module RX pin, and
+# GPS_UART_rxd is driven by the GPS module TX pin.
+set_property -dict {PACKAGE_PIN F16 IOSTANDARD LVCMOS33} [get_ports gps_pps]
+set_property -dict {PACKAGE_PIN E16 IOSTANDARD LVCMOS33} [get_ports GPS_UART_txd]
+set_property -dict {PACKAGE_PIN D18 IOSTANDARD LVCMOS33} [get_ports GPS_UART_rxd]
+
 # -----------------------------------------------------------------------------
 # Ethernet — PS GEM0 via EMIO → gmii_to_rgmii IP → RTL8211E RGMII PHY.
 #
@@ -69,6 +76,18 @@ set_clock_groups -asynchronous \
     -group [get_clocks -include_generated_clocks clk_fpga_0] \
     -group [get_clocks -include_generated_clocks clk_fpga_1] \
     -group [get_clocks -include_generated_clocks RGMII_rxc]
+
+# adc_clk (MMCM output from clk_wiz_adc, 16 MHz) is generated from
+# clk_fpga_0 (100 MHz). Vivado normally times paths between a source and
+# its MMCM-generated child because they share a PLL reference, but every
+# crossing between the two in this design is either an ASYNC_REG 2-flop
+# synchroniser (diagnostic taps, config registers inside adsb_top) or a
+# proper async FIFO (async_msg_fifo). The large frequency ratio and the
+# CDC patterns make the tools' timing analysis pointless on these paths
+# — declare them asynchronous so the static timing engine skips them.
+set_clock_groups -asynchronous \
+    -group [get_clocks clk_fpga_0] \
+    -group [get_clocks -of_objects [get_pins -hier -filter {name =~ *clk_wiz_adc*CLKOUT0*}]]
 
 # IDELAY tuning on the RGMII RX pads. Value=8 taps was empirically found to
 # be optimal on this RTL8211E board; adjust if eye-scan shows margin issues.

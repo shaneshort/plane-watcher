@@ -35,6 +35,7 @@ contrib/
 visualizations/
 
 # Go build artifacts
+bin/
 ps/bin/
 ps/bin-arm/
 ps/regdump
@@ -42,6 +43,7 @@ ps/regpeek
 ps/plane-feeder
 ps/beast-client
 ps/beast-client-mac
+ps/dump-capture
 ps/*.csv
 
 # Local helper scripts
@@ -59,6 +61,7 @@ hdl/vivado/*.log
 hdl/vivado/*.jou
 hdl/vivado/*.backup.log
 hdl/vivado/*.backup.jou
+hdl/vivado/bitstream_backups/
 
 # Device tree build output
 linux-dts/*.dtb

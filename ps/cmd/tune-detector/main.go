@@ -53,7 +53,7 @@ func (v *icaoValue) UnmarshalJSON(data []byte) error {
 }
 
 func main() {
-	baseURL := flag.String("base-url", "http://pluto.local:8080", "plane-feeder base URL")
+	baseURL := flag.String("base-url", "http://planewatcher.local:8080", "plane-feeder base URL")
 	quietList := flag.String("quiet-list", "1", "comma-separated quiet_score_shift values to test")
 	snrList := flag.String("snr-list", "0", "comma-separated snr_ratio_shift values to test")
 	trackICAOs := flag.String("track-icaos", "", "comma-separated ICAOs to track from /api/aircraft (hex, e.g. 7CF62D,7CF67B)")

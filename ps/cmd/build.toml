@@ -8,41 +8,44 @@
 # Commands without an entry default to targets = ["host", "arm"].
 
 [beast-client]
-targets = ["host"]
+targets = ["arm"]
 
 [builder]
 targets = ["host"]
 
 [collect-stats]
-targets = ["host"]
+targets = ["arm"]
+
+[dump-capture]
+targets = ["arm"]
 
 [fifo-monitor]
-targets = ["host"]
+targets = ["arm"]
 
 [plane-feeder]
 targets = ["arm"]
 service = "S99plane-feeder"
 
 [pps-check]
-targets = ["host"]
+targets = ["arm"]
 
 [regdump]
-targets = ["host", "arm"]
+targets = ["arm"]
 
 [regpeek]
-targets = ["host", "arm"]
+targets = ["arm"]
 
 [replay]
 targets = ["host"]
 
-[sweep-gain]
+[sweep-align]
 targets = ["arm"]
 
 [tune-detector]
-targets = ["host", "arm"]
+targets = ["arm"]
 
 [ubx]
-targets = ["host", "arm"]
+targets = ["arm"]
 
 [watch-stats]
-targets = ["host"]
+targets = ["arm"]

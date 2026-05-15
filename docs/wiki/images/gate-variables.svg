@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="440" viewBox="0 0 820 440">
+  <rect width="820" height="440" fill="#262626"/>
+
+  <text x="410" y="28" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif" font-size="14" font-weight="bold" fill="#FDE6A0">Preamble quality gate -- variables and rules</text>
+
+  <!-- Mini preamble panel (x: 20..540, y: 55..210) -->
+  <rect x="20" y="55" width="520" height="170" fill="none" stroke="#FDE6A0" stroke-width="0.5" opacity="0.25"/>
+  <text x="30" y="72" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" font-weight="bold" fill="#FDE6A0">Preamble window (8 us, 128 samples at 16 MHz)</text>
+
+  <!-- Time baseline -->
+  <line x1="40" y1="200" x2="520" y2="200" stroke="#FDE6A0" stroke-width="1" opacity="0.5"/>
+
+  <!-- Pulse window rects (P1..P4) at 0, 1, 3.5, 4.5 us; us->x: 40 + us*60 -->
+  <rect x="80" y="95" width="30" height="105" fill="#FBEB24" opacity="0.30"/>
+  <text x="95" y="112" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" font-weight="bold" fill="#FBEB24">P1</text>
+  <rect x="140" y="95" width="30" height="105" fill="#FBEB24" opacity="0.30"/>
+  <text x="155" y="112" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" font-weight="bold" fill="#FBEB24">P2</text>
+  <rect x="290" y="95" width="30" height="105" fill="#FBEB24" opacity="0.30"/>
+  <text x="305" y="112" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" font-weight="bold" fill="#FBEB24">P3</text>
+  <rect x="350" y="95" width="30" height="105" fill="#FBEB24" opacity="0.30"/>
+  <text x="365" y="112" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" font-weight="bold" fill="#FBEB24">P4</text>
+
+  <!-- Quiet window rects (QA, QB, QC, QD) -->
+  <rect x="170" y="160" width="30" height="40" fill="#A3E835" opacity="0.18"/>
+  <text x="185" y="175" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" font-weight="bold" fill="#A3E835">QA</text>
+  <rect x="260" y="160" width="30" height="40" fill="#A3E835" opacity="0.18"/>
+  <text x="275" y="175" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" font-weight="bold" fill="#A3E835">QB</text>
+  <rect x="320" y="160" width="30" height="40" fill="#A3E835" opacity="0.18"/>
+  <text x="335" y="175" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" font-weight="bold" fill="#A3E835">QC</text>
+  <rect x="410" y="160" width="30" height="40" fill="#A3E835" opacity="0.18"/>
+  <text x="425" y="175" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" font-weight="bold" fill="#A3E835">QD</text>
+
+  <!-- Pulse bells -->
+  <path d="M 80,200 C 88,195 92,105 95,90 C 98,82 102,82 105,90 C 108,105 112,195 120,200" fill="none" stroke="#FBEB24" stroke-width="2"/>
+  <path d="M 140,200 C 148,195 152,105 155,90 C 158,82 162,82 165,90 C 168,105 172,195 180,200" fill="none" stroke="#FBEB24" stroke-width="2"/>
+  <path d="M 290,200 C 298,195 302,105 305,90 C 308,82 312,82 315,90 C 318,105 322,195 330,200" fill="none" stroke="#FBEB24" stroke-width="2"/>
+  <path d="M 350,200 C 358,195 362,105 365,90 C 368,82 372,82 375,90 C 378,105 382,195 390,200" fill="none" stroke="#FBEB24" stroke-width="2"/>
+
+  <!-- Quiet-zone baseline noise squiggle -->
+  <path d="M 180,198 L 200,196 L 220,199 L 240,197 L 260,198 L 290,200" fill="none" stroke="#FDE6A0" stroke-width="1" opacity="0.35"/>
+  <path d="M 330,198 L 340,197 L 350,199" fill="none" stroke="#FDE6A0" stroke-width="1" opacity="0.35"/>
+  <path d="M 390,198 L 410,197 L 430,199 L 450,197 L 470,198" fill="none" stroke="#FDE6A0" stroke-width="1" opacity="0.35"/>
+
+  <!-- Variables panel (x: 560..800) -->
+  <text x="560" y="75" font-family="'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="bold" fill="#FBEB24">sum_pulse</text>
+  <text x="560" y="92" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="#FDE6A0">= P1 + P2 + P3 + P4</text>
+  <text x="560" y="108" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" fill="#FDE6A0" opacity="0.7">(total energy in pulse slots)</text>
+
+  <text x="560" y="138" font-family="'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="bold" fill="#A3E835">sum_gap</text>
+  <text x="560" y="155" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="#FDE6A0">= QA + QB + QC + QD</text>
+  <text x="560" y="171" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" fill="#FDE6A0" opacity="0.7">(total energy in quiet slots)</text>
+
+  <text x="560" y="201" font-family="'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="bold" fill="#F59E0B">quiet_score</text>
+  <text x="560" y="218" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="#FDE6A0">= &#931; (adjacent_pulse - Q)</text>
+  <text x="560" y="232" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" fill="#FDE6A0" opacity="0.7">over the four pulse/quiet pairs</text>
+
+  <!-- Rules panel -->
+  <rect x="20" y="250" width="780" height="80" fill="#1b1b1b" stroke="#FDE6A0" stroke-width="0.5" opacity="0.9"/>
+  <text x="30" y="270" font-family="'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="bold" fill="#FDE6A0">Gate rules (both must pass)</text>
+
+  <text x="30" y="295" font-family="'JetBrains Mono', ui-monospace, Menlo, monospace" font-size="13" fill="#F59E0B">quiet_pass</text>
+  <text x="128" y="295" font-family="'JetBrains Mono', ui-monospace, Menlo, monospace" font-size="13" fill="#FDE6A0">= quiet_score &gt; ( sum_pulse &gt;&gt; quiet_score_shift )</text>
+  <text x="560" y="295" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="#FDE6A0" opacity="0.7">&#8592; higher shift = more permissive</text>
+
+  <text x="30" y="318" font-family="'JetBrains Mono', ui-monospace, Menlo, monospace" font-size="13" fill="#FBEB24">snr_pass</text>
+  <text x="128" y="318" font-family="'JetBrains Mono', ui-monospace, Menlo, monospace" font-size="13" fill="#FDE6A0">= sum_pulse  &gt; ( sum_gap    &lt;&lt; snr_ratio_shift   )</text>
+  <text x="560" y="318" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="#FDE6A0" opacity="0.7">&#8592; higher shift = stricter</text>
+
+  <!-- Footer note -->
+  <text x="30" y="360" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="#FDE6A0" opacity="0.8">Both shifts are 3-bit fields (0..7). Defaults: quiet_score_shift = 1 (score &gt; pulse/2), snr_ratio_shift = 0 (pulse &gt; gap).</text>
+  <text x="30" y="378" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="#FDE6A0" opacity="0.8">The third rule in the quality gate -- each individual pulse above POWER_THRESHOLD -- is a compile-time constant, not a tunable knob.</text>
+  <text x="30" y="396" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="#FDE6A0" opacity="0.8">The two knobs move in opposite directions: raising quiet_score_shift loosens the gate, raising snr_ratio_shift tightens it.</text>
+  <text x="30" y="420" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" fill="#FDE6A0" opacity="0.55" font-style="italic">See the companion plots: quiet-score-shift.svg and snr-ratio-shift.svg</text>
+</svg>

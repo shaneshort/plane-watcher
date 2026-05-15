@@ -1,0 +1,60 @@
+# /etc/default/plane-feeder — options for the plane-feeder daemon.
+#
+# Canonical version lives at ps/cmd/plane-feeder/plane-feeder.default
+# (in the main repo, adjacent to the daemon's flag definitions). The
+# Yocto slipstream recipe under firmware/.../recipes-pwtools/ pulls a
+# copy from there via `builder sync-recipe --write`. Edit the canonical
+# version when you add/remove/rename a flag in main.go.
+#
+# Sourced by /etc/init.d/plane-feeder at start time on the board.
+# Uncomment any OPT_* line below, then restart with:
+#     /etc/init.d/plane-feeder restart
+#
+# Multiple options can be set; they are concatenated into DAEMON_ARGS at
+# the bottom of this file. With everything commented out, plane-feeder
+# runs with its built-in defaults.
+
+# --- Network ---
+# Beast output TCP port (default 30005).
+#OPT_PORT="--port=30005"
+# Web dashboard port (default 8080).
+#OPT_HTTP_PORT="--http-port=8080"
+
+# --- Output format ---
+# Use Radarcape timestamp format (UTC via PPS + NTP). Default off.
+#OPT_RADARCAPE="--radarcape"
+
+# --- TOA reordering ---
+# Max TOA reordering hold window (default 75ms).
+#OPT_REORDER_WINDOW="--reorder-window=75ms"
+# Max buffered messages before forced ordered flush (default 256).
+#OPT_REORDER_MAX_BUFFERED="--reorder-max-buffered=256"
+
+# --- Receiver position ---
+# Receiver lat/lon for CPR decode. Set to non-zero to override gpsd query.
+# When both are set, --alt is required for 0x35 position frames.
+#OPT_LAT="--lat=0"
+#OPT_LON="--lon=0"
+# Altitude in metres (required with --lat/--lon).
+#OPT_ALT="--alt=0"
+
+# --- gpsd integration ---
+# Retry interval for gpsd position lookup when --lat/--lon are unset.
+#OPT_GPSD_RETRY_INTERVAL="--gpsd-retry-interval=10s"
+# gpsd address for GNSS status monitor; blank to disable.
+#OPT_GPSMON_ADDR="--gpsmon-addr=localhost:2947"
+# gpsd device path for the GNSS monitor; blank = auto-pick first.
+#OPT_GPSMON_DEVICE="--gpsmon-device="
+# GNSS status poll interval (default 5s).
+#OPT_GPSMON_INTERVAL="--gpsmon-interval=5s"
+
+# --- Hardware ---
+# Use mock reader (empty FIFO, no hardware). Default off.
+#OPT_MOCK="--mock"
+
+# --- Assembled command line (do not edit below this line) ---
+DAEMON_ARGS="$OPT_PORT $OPT_HTTP_PORT $OPT_RADARCAPE \
+$OPT_REORDER_WINDOW $OPT_REORDER_MAX_BUFFERED \
+$OPT_LAT $OPT_LON $OPT_ALT \
+$OPT_GPSD_RETRY_INTERVAL $OPT_GPSMON_ADDR $OPT_GPSMON_DEVICE $OPT_GPSMON_INTERVAL \
+$OPT_MOCK"

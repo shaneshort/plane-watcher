@@ -1,8 +1,8 @@
 # PS Tooling
 
 `ps/` is the Linux userspace side of the receiver. It is a standalone Go
-module, but it is still coupled to this repository's FPGA register contract,
-radio assumptions, and operational workflow.
+module, but it is still coupled to this repository's FPGA register contract
+and operational workflow.
 
 The layout now follows the useful parts of the common Go project-layout
 pattern:
@@ -17,18 +17,19 @@ pattern:
   - reads decoded frames from the AXI register block via `/dev/mem`
   - pushes Beast output on TCP port `30005`
   - serves the embedded dashboard and JSON API on port `8080`
-  - applies radio and detector defaults at startup
+  - applies detector defaults at startup
 
 ## Support Commands
 
-- `cmd/regdump`: inspect registers, counters, and radio state
+- `cmd/regdump`: inspect registers and counters
 - `cmd/regpeek`: dump raw register words
 - `cmd/fifo-monitor`: watch FIFO and overflow state continuously
 - `cmd/pps-check`: validate PPS cadence
 - `cmd/replay`: replay captured/reference frames without hardware
 - `cmd/beast-client`: inspect Beast output from a feeder/replay server
 - `cmd/collect-stats`: sample `/api/stats?debug=1` into CSV
-- `cmd/sweep-gain`: sweep manual gain values over the HTTP control API
+- `cmd/dump-capture`: dump raw/debug ADC capture windows from the register block
+- `cmd/sweep-align`: sweep message-delay/output-tap settings for frontend alignment
 - `cmd/tune-detector`: sweep detector settings over the HTTP control API
 - `cmd/watch-stats`: terminal dashboard for live tuning metrics and trends
 
@@ -66,7 +67,7 @@ Live tuning dashboard:
 
 ```sh
 cd ps
-go run ./cmd/watch-stats --base-url http://pluto.local:8080
+go run ./cmd/watch-stats --base-url http://planewatcher.local:8080
 ```
 
 This polls `/api/stats?debug=1` and redraws a terminal dashboard with rolling
@@ -80,10 +81,9 @@ Served by `plane-feeder`:
 - `GET /api/stats`
 - `GET /api/stats?debug=1`
 - `GET /api/aircraft`
-- `POST /api/radio/gain-mode`
-- `POST /api/radio/gain`
 - `POST /api/detector/quiet-score-shift`
 - `POST /api/detector/snr-ratio-shift`
+- `POST /api/detector/holdoff`
 
 ## Repo Boundary
 

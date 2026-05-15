@@ -14,7 +14,7 @@ import (
 const expectedTicksPerSec = 100_000_000
 
 func main() {
-	baseAddr := flag.Uint64("base-addr", 0x43D00000, "AXI register base address")
+	baseAddr := flag.Uint64("base-addr", 0x43C03000, "AXI register base address")
 	samples := flag.Int("samples", 5, "number of PPS intervals to check")
 	flag.Parse()
 

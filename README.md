@@ -14,7 +14,7 @@ targeting a Zynq-7020 platform (Fishball / PlutoSDR-compatible Rev.C).
 - GPS PPS-disciplined 100 MHz timestamps: sub-microsecond accuracy, validated against Radarcape reference
 - chrony NTP discipline to PPS: <1 µs offset
 - Embedded web dashboard and JSON API on port 8080
-- Runtime control of radio gain and detector thresholds via HTTP
+- Runtime control of detector thresholds via HTTP
 
 ## Repository Layout
 
@@ -23,7 +23,7 @@ hdl/rtl/          20 synthesisable VHDL modules for the PL pipeline
 hdl/tb/           6 VHDL testbenches
 hdl/sim/          GHDL simulation targets, Makefile, sweep scripts
 hdl/vivado/       Vivado project scaffold, TCL build scripts, constraints
-linux-dts/        Board device-tree sources for stock-tap and hybrid flows
+linux-dts/        Board device-tree sources and historical board-flow notes
 boot/             Boot-partition and initramfs-overlay artifacts
 ps/               Go userspace: daemon, tools, and tests
 docs/             Architecture, hardware, roadmap, and planning notes
@@ -57,14 +57,11 @@ For tooling categories and usage, see `tools/README.md`.
 cp tools/plane_watcher.env.example tools/plane_watcher.env
 $EDITOR tools/plane_watcher.env
 
-# Build bitstream (stock-tap flow)
-./tools/build-bitstream.sh --skip-deploy
+# Build firmware artifacts without deploying
+./tools/rebuild.sh --no-deploy
 
-# Package .bit.bin for SD card
-./tools/deploy-bitstream.sh --generate-only
-
-# Or build and deploy in one step
-./tools/build-bitstream.sh --deploy
+# Or rebuild only the bitstream and BOOT.BIN
+./tools/rebuild.sh --bitstream --no-deploy
 
 # Build + slipstream PS tools into a fresh Petalinux image, then deploy
 go -C ps run ./cmd/builder --ps-slipstream --petalinux --deploy=ssh --reboot
@@ -84,7 +81,7 @@ cd hdl/sim && make sim_all
 Eleven Go commands under `ps/cmd/`:
 
 - `plane-feeder`: main daemon — reads AXI registers, polls FIFO, tracks aircraft, encodes Beast frames (standard + Radarcape), serves Beast TCP on port 30005, hosts the dashboard/API on port 8080, manages PPS/GPS time correlation
-- `regdump`: register inspector — shows VERSION, STATUS, radio IIO settings, pipeline debug counters; optionally pops FIFO
+- `regdump`: register inspector — shows VERSION, STATUS, pipeline debug counters; optionally pops FIFO
 - `fifo-monitor`: continuous status monitor — polls FIFO fill level, flags, PPS count
 - `pps-check`: PPS sanity checker — validates counter cadence and frequency
 - `regpeek`: raw register hex dump utility — reads N consecutive 32-bit registers from a base address
@@ -92,7 +89,8 @@ Eleven Go commands under `ps/cmd/`:
 - `beast-client`: Beast stream consumer — connects to server, parses and verifies frames
 - `collect-stats`: HTTP polling helper — samples `/api/stats?debug=1` into CSV for overnight or tuning runs
 - `tune-detector`: detector sweep helper — applies detector settings over HTTP and measures decode/debug deltas
-- `sweep-gain`: manual gain sweep tool — steps through gain values via HTTP and records decode metrics
+- `dump-capture`: raw/debug sample-capture dumper for ADC/frontend bring-up
+- `sweep-align`: message-delay/output-tap alignment sweep helper
 - `watch-stats`: terminal dashboard — polls stats API and renders rolling charts for message rate, valid rate, aircraft count, and frontend headroom
 
 Supporting packages:
@@ -101,10 +99,9 @@ Supporting packages:
 - `beast`: Beast frame encoding (standard and Radarcape v2 with UTC timestamps)
 - `server`: TCP listener and multi-client fan-out with welcome-frame support
 - `tracker`: live aircraft state derived from decoded frames
-- `web`: embedded dashboard plus JSON API for stats, aircraft, radio gain, and detector control
+- `web`: embedded dashboard plus JSON API for stats, aircraft, and detector control
 - `chrony`: chrony NTP tracking source queries
 - `pps`: PPS GPIO edge monitoring and frequency measurement
-- `radio`: AD9363 IIO radio control (gain mode, manual gain)
 - `crc`: Mode-S CRC-24 computation
 - `reorder`: timestamp-based frame reordering for multi-decoder output
 - `diag`: rejected frame diagnostics
@@ -146,7 +143,7 @@ Supporting packages:
 - register decode, Beast encoding (standard + Radarcape), replay parsing
 - golden end-to-end frame tests
 - integration test for mock FIFO to TCP Beast output
-- chrony, PPS, radio, reorder, tracker, and web package tests
+- chrony, PPS, reorder, tracker, and web package tests
 
 **RTL testbenches** in `hdl/tb/` (runnable via `hdl/sim/Makefile`):
 - `adsb_crc_tb.vhd` — CRC polynomial and syndrome computation
@@ -163,31 +160,28 @@ Supporting packages:
 
 **Known status**: weak1 and weak2 pass; weak3–weak5 still need tuning.
 
-## Bitstream Flow
+## Firmware Flow
 
-The **stock-tap** flow is the active build path. It sources the vendor Pluto
-block design, then taps in the ADS-B decoder wrapper, PPS input, and GPS UART0
-EMIO on top.
+The active firmware build path is `tools/rebuild.sh`. It rebuilds the Smart ZYNQ
+phase-1 Vivado project, exports an XSA, imports it into Petalinux, packages
+`BOOT.BIN`, and can deploy the resulting artifacts.
 
 ```sh
-# Build only
-./tools/build-bitstream.sh --skip-deploy
+# Build all firmware artifacts without deploying
+./tools/rebuild.sh --no-deploy
 
-# Build + deploy to board
-./tools/build-bitstream.sh --deploy
+# Rebuild bitstream/XSA and repackage BOOT.BIN only
+./tools/rebuild.sh --bitstream --no-deploy
 
-# Package .bit.bin locally (for SD card or manual install)
-./tools/deploy-bitstream.sh --generate-only
-
-# Deploy a previously built bitstream
-./tools/deploy-bitstream.sh
+# Build and deploy to the running board
+./tools/rebuild.sh
 ```
 
 Machine-specific paths and defaults belong in `tools/plane_watcher.env`, using
 `tools/plane_watcher.env.example` as the template.
 
-A vendor-hybrid flow (`build_vendor.tcl`) is retained but is not the active
-integration path.
+Older stock-tap and vendor-hybrid Vivado scripts are retained as legacy
+references, not as the active firmware path.
 
 ## Timestamping
 
@@ -210,7 +204,7 @@ Implementation:
 - **Beast TCP**: port `30005` (standard or Radarcape format via `-radarcape` flag)
 - **Dashboard**: `http://<host>:8080/`
 - **JSON API**: `GET /api/stats`, `GET /api/stats?debug=1`, `GET /api/aircraft`
-- **Control API**: `POST /api/radio/gain-mode`, `POST /api/radio/gain`, `POST /api/detector/quiet-score-shift`, `POST /api/detector/snr-ratio-shift`
+- **Control API**: `POST /api/detector/quiet-score-shift`, `POST /api/detector/snr-ratio-shift`, `POST /api/detector/holdoff`
 
 ## Development Platform
 

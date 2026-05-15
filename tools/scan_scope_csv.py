@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +26,7 @@ MODE_S_POLY = 0xFFF409
 
 @dataclass
 class DecodeResult:
+    source: str
     sample: int
     time_us: float
     bits: int
@@ -43,13 +45,51 @@ def sample_rate_to_sps(sample_rate: float) -> int:
 
 
 def load_scope_csv(path: str) -> tuple[np.ndarray, np.ndarray]:
-    """Load a two-column scope CSV containing time and voltage."""
-    data = np.loadtxt(path, delimiter=",", skiprows=2, usecols=(0, 1))
-    if data.ndim != 2 or data.shape[1] != 2:
-        raise ValueError(f"unexpected CSV shape for {path}: {data.shape}")
-    times = data[:, 0].astype(np.float64)
-    volts = data[:, 1].astype(np.float64)
+    """Load a scope CSV containing time and voltage columns after metadata rows."""
+    times_list: list[float] = []
+    volts_list: list[float] = []
+    data_started = False
+
+    with open(path, "r", encoding="utf-8", newline="") as handle:
+        reader = csv.reader(handle)
+        for row in reader:
+            if len(row) < 2:
+                continue
+
+            if not data_started:
+                if row[0].strip() == "Second" and row[1].strip() == "Value":
+                    data_started = True
+                continue
+
+            try:
+                times_list.append(float(row[0]))
+                volts_list.append(float(row[1]))
+            except ValueError as exc:
+                raise ValueError(
+                    f"unexpected non-numeric data row in {path}: {row[:2]}"
+                ) from exc
+
+    if not data_started:
+        raise ValueError(f"could not find 'Second,Value' header in {path}")
+    if not times_list:
+        raise ValueError(f"no sample rows found in {path}")
+
+    times = np.asarray(times_list, dtype=np.float64)
+    volts = np.asarray(volts_list, dtype=np.float64)
     return times, volts
+
+
+def expand_inputs(paths: list[str]) -> list[str]:
+    expanded: list[str] = []
+    for raw in paths:
+        path = Path(raw)
+        if path.is_dir():
+            expanded.extend(str(candidate) for candidate in sorted(path.glob("*.csv")))
+            continue
+        expanded.append(str(path))
+    if not expanded:
+        raise ValueError("no CSV inputs found")
+    return expanded
 
 
 def normalize_envelope(volts: np.ndarray, polarity: str) -> tuple[np.ndarray, str]:
@@ -139,6 +179,7 @@ def mean_slice(trace: np.ndarray, start: int, width: int) -> float:
 
 
 def scan_for_messages(
+    source: str,
     env: np.ndarray,
     sample_rate: float,
     threshold_scale: float = 5.0,
@@ -207,6 +248,7 @@ def scan_for_messages(
         if long_df in (16, 17, 18, 19, 20, 21) and long_crc:
             crc_ok, details = validate_message(long_hex)
             chosen = DecodeResult(
+                source=source,
                 sample=i,
                 time_us=i / sample_rate * 1e6,
                 bits=112,
@@ -220,6 +262,7 @@ def scan_for_messages(
         elif short_df in (0, 4, 5, 11) and short_crc:
             crc_ok, details = validate_message(short_hex)
             chosen = DecodeResult(
+                source=source,
                 sample=i,
                 time_us=i / sample_rate * 1e6,
                 bits=56,
@@ -311,7 +354,11 @@ def plot_capture(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scan scope CSV captures for Mode-S / ADS-B messages")
-    parser.add_argument("csv_file", help="Scope CSV file containing time and voltage columns")
+    parser.add_argument(
+        "csv_files",
+        nargs="+",
+        help="One or more scope CSV files, or directories containing CSV files",
+    )
     parser.add_argument(
         "--polarity",
         choices=("auto", "positive", "negative"),
@@ -359,60 +406,80 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    times, volts = load_scope_csv(args.csv_file)
-    dt = np.diff(times)
-    inferred_sample_rate = 1.0 / float(np.median(dt))
-    sample_rate = args.sample_rate or inferred_sample_rate
+    csv_files = expand_inputs(args.csv_files)
+    if args.plot and len(csv_files) != 1:
+        raise SystemExit("--plot currently requires exactly one input CSV")
 
-    env, chosen_polarity = normalize_envelope(volts, args.polarity)
-    results = scan_for_messages(
-        env,
-        sample_rate=sample_rate,
-        threshold_scale=args.threshold_scale,
-        quiet_ratio=args.quiet_ratio,
-    )
+    all_results: list[DecodeResult] = []
+    plot_context: tuple[str, np.ndarray, np.ndarray, float] | None = None
 
-    print(f"Loaded {args.csv_file}")
-    print(f"  samples={len(times)}")
-    print(f"  duration={times[-1] - times[0]:.9f}s")
-    print(f"  inferred_sample_rate={inferred_sample_rate:.0f} Hz")
-    print(f"  sample_rate={sample_rate:.0f} Hz")
-    print(f"  polarity={chosen_polarity}")
-    print(f"  envelope stats: min={env.min():.6f} max={env.max():.6f} mean={env.mean():.6f}")
+    for csv_file in csv_files:
+        times, volts = load_scope_csv(csv_file)
+        dt = np.diff(times)
+        inferred_sample_rate = 1.0 / float(np.median(dt))
+        sample_rate = args.sample_rate or inferred_sample_rate
 
-    print(f"\nFound {len(results)} messages:\n")
-    print(f"  {'Sample':>8}  {'Time':>9}  {'DF':>3}  {'Bits':>4}  {'CRC':>3}  Message")
-    print(f"  {'-' * 8}  {'-' * 9}  {'-' * 3}  {'-' * 4}  {'-' * 3}  -------")
-    for res in results:
-        crc_text = "ok" if res.crc_ok else "no"
-        print(f"  {res.sample:>8}  {res.time_us:>7.1f}us  {res.df:>3}  {res.bits:>4}  {crc_text:>3}  {res.hex_msg}")
-        if res.details:
-            print(f"    {res.details}")
+        env, chosen_polarity = normalize_envelope(volts, args.polarity)
+        results = scan_for_messages(
+            csv_file,
+            env,
+            sample_rate=sample_rate,
+            threshold_scale=args.threshold_scale,
+            quiet_ratio=args.quiet_ratio,
+        )
+        all_results.extend(results)
 
-    if not results:
-        threshold = np.percentile(env, 99.9)
-        peaks = np.where(env >= threshold)[0]
-        print("  (none found)")
-        print(f"  99.9th percentile threshold={threshold:.6f}, peaks={len(peaks)}")
-        if len(peaks):
-            print(f"  strongest region starts near sample {int(peaks[0])} ({peaks[0] / sample_rate * 1e6:.1f} us)")
+        print(f"Loaded {csv_file}")
+        print(f"  samples={len(times)}")
+        print(f"  duration={times[-1] - times[0]:.9f}s")
+        print(f"  inferred_sample_rate={inferred_sample_rate:.0f} Hz")
+        print(f"  sample_rate={sample_rate:.0f} Hz")
+        print(f"  polarity={chosen_polarity}")
+        print(f"  envelope stats: min={env.min():.6f} max={env.max():.6f} mean={env.mean():.6f}")
 
-    if args.ref and results:
+        print(f"\nFound {len(results)} messages:\n")
+        print(f"  {'Sample':>8}  {'Time':>9}  {'DF':>3}  {'Bits':>4}  {'CRC':>3}  Message")
+        print(f"  {'-' * 8}  {'-' * 9}  {'-' * 3}  {'-' * 4}  {'-' * 3}  -------")
+        for res in results:
+            crc_text = "ok" if res.crc_ok else "no"
+            print(f"  {res.sample:>8}  {res.time_us:>7.1f}us  {res.df:>3}  {res.bits:>4}  {crc_text:>3}  {res.hex_msg}")
+            if res.details:
+                print(f"    {res.details}")
+
+        if not results:
+            threshold = np.percentile(env, 99.9)
+            peaks = np.where(env >= threshold)[0]
+            print("  (none found)")
+            print(f"  99.9th percentile threshold={threshold:.6f}, peaks={len(peaks)}")
+            if len(peaks):
+                print(f"  strongest region starts near sample {int(peaks[0])} ({peaks[0] / sample_rate * 1e6:.1f} us)")
+
+        print()
+        if len(csv_files) == 1:
+            plot_context = (csv_file, times, env, sample_rate)
+
+    unique_messages = len({res.hex_msg for res in all_results})
+    print(f"Scanned {len(csv_files)} file(s); recovered {len(all_results)} frame(s), {unique_messages} unique message(s).")
+
+    if args.ref and all_results:
         with open(args.ref, "w", encoding="ascii") as handle:
-            for res in results:
+            for res in all_results:
                 handle.write(f"*{res.hex_msg};\n")
-        print(f"\nWrote {len(results)} messages to {args.ref}")
+        print(f"Wrote {len(all_results)} messages to {args.ref}")
 
     if args.plot:
-        if not results:
+        if not all_results:
             raise SystemExit("--plot requested but no messages were recovered")
-        if args.plot_index < 0 or args.plot_index >= len(results):
-            raise SystemExit(f"--plot-index out of range: {args.plot_index} (found {len(results)} messages)")
+        if args.plot_index < 0 or args.plot_index >= len(all_results):
+            raise SystemExit(f"--plot-index out of range: {args.plot_index} (found {len(all_results)} messages)")
+        if plot_context is None:
+            raise SystemExit("internal error: plot context missing")
+        csv_file, times, env, sample_rate = plot_context
         plot_capture(
-            args.csv_file,
+            csv_file,
             times,
             env,
-            results[args.plot_index],
+            all_results[args.plot_index],
             sample_rate,
             args.plot,
             args.plot_window_us,

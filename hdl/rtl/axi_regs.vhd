@@ -13,7 +13,8 @@
 --   0x10  TOA_LO      (R)   Timestamp bits [31:0]
 --   0x14  TOA_HI      (R)   Timestamp bits [63:32]
 --   0x18  RPL         (R)   Signal level [23:0] — READING POPS THE FIFO
---   0x1C  STATUS      (R)   [0] = not empty, [1] = full, [2] = overflow (sticky)
+--   0x1C  STATUS      (R)   [0] = not empty, [1] = full,
+--                            [2] = overflow seen in the last 10 s
 --                            [14:8] = FIFO fill count
 --   0x20  PPS_COUNT   (R)   PPS pulse count [31:0]
 --   0x24  PPS_CTR_LO  (R)   Counter at last PPS [31:0]
@@ -21,9 +22,11 @@
 --   0x2C  CONTROL     (RW)  [0] = soft reset (auto-clear), [1] = enable,
 --                            [2] = debug snapshot request (write-1 pulses)
 --   0x30  VERSION     (R)   Hardware version (0x00010000 = v1.0.0)
---   0x34  DBG_INDEX   (RW)  Debug counter selector [5:0]
+--   0x34  DBG_INDEX   (RW)  Debug counter selector [7:0]
 --   0x38  DBG_DATA    (R)   Reads the debug counter selected by DBG_INDEX
 --   0x3C  CONFIG      (RW)  [2:0] = quiet_score_shift, [5:3] = snr_ratio_shift
+--                            [15:6] = holdoff, [23:16] = message_delay,
+--                            [31:24] = output_tap
 --
 -- Debug counter indices (write to DBG_INDEX, read from DBG_DATA):
 --    0  POWER_MAX          Maximum sample_power seen after downsampling [23:0]
@@ -60,6 +63,12 @@
 --   49  RAW_POWER_THR_CT   pre-downsample samples above main power threshold
 --   53  RAW_IQ_75PCT_CT    raw I/Q samples with either lane above 75% full scale
 --   54  RAW_IQ_87P5PCT_CT  raw I/Q samples with either lane above 87.5% full scale
+--   55  ADC_CODE_MIN       minimum raw ADC code seen since reset [11:0]
+--   56  ADC_CODE_MAX       maximum raw ADC code seen since reset [11:0]
+--   57  ADC_BIT_OR         bitwise OR of raw ADC codes seen since reset [11:0]
+--   58  ADC_BIT_AND        bitwise AND of raw ADC codes seen since reset [11:0]
+--   59  ADC_BIT_TOGGLE     raw ADC bits that toggled since reset [11:0]
+--   60  ADC_OTR_CT         ADC out-of-range assertions since reset
 --   50  RAW_IQ_NEARRAIL_CT raw I/Q samples with either lane near full scale
 --   51  RAW_POWER_SAT_CT   pre-downsample scalar power samples near ceiling
 --   52  SAMPLE_FIFO_OVF_CT samples dropped because the RX→core sample FIFO was full
@@ -171,10 +180,22 @@ entity axi_regs is
         core_in_valid_count : in unsigned(31 downto 0);
         core_state         : in std_logic_vector(31 downto 0);
         rx_clk_count       : in unsigned(31 downto 0);
+        adc_code_min       : in unsigned(31 downto 0);
+        adc_code_max       : in unsigned(31 downto 0);
+        adc_bit_or         : in unsigned(31 downto 0);
+        adc_bit_and        : in unsigned(31 downto 0);
+        adc_bit_toggle     : in unsigned(31 downto 0);
+        adc_otr_count      : in unsigned(31 downto 0);
+        sample_capture_data : in std_logic_vector(31 downto 0);
+        sample_capture_index : out unsigned(7 downto 0);
+        raw_capture_index    : out unsigned(7 downto 0);
+        raw_capture_data     : in std_logic_vector(31 downto 0);
         debug_snapshot_req : out std_logic;
         quiet_score_shift_cfg : out unsigned(2 downto 0);
         snr_ratio_shift_cfg   : out unsigned(2 downto 0);
         holdoff_cfg           : out unsigned(11 downto 0);
+        message_delay_cfg     : out unsigned(7 downto 0);
+        output_tap_cfg        : out unsigned(7 downto 0);
 
         -- =====================================================================
         -- Decoder control outputs
@@ -241,6 +262,10 @@ architecture arch of axi_regs is
     constant VERSION_REG : std_logic_vector(31 downto 0) :=
         version_hi(ENABLE_DEEP_DEBUG) &
         std_logic_vector(to_unsigned(BUILD_ID mod 65536, 16));  -- bit31=deep-debug, v1.0.build
+    constant AXI_CLK_HZ                 : natural := 100_000_000;
+    constant OVERFLOW_HOLD_SECONDS      : natural := 10;
+    constant OVERFLOW_HOLD_CYCLES       : natural := AXI_CLK_HZ * OVERFLOW_HOLD_SECONDS;
+    constant OVERFLOW_HOLD_COUNTER_BITS : natural := 30;
 
     -- Register index (byte address >> 2) — only 16 slots (0x00–0x3C) are
     -- reliably addressable through the Zynq AXI interconnect.
@@ -317,6 +342,12 @@ architecture arch of axi_regs is
     constant DBG_SAMPLE_FIFO_OVF_CT : natural := 52;
     constant DBG_RAW_IQ_75PCT_CT  : natural := 53;
     constant DBG_RAW_IQ_87P5PCT_CT : natural := 54;
+    constant DBG_ADC_CODE_MIN     : natural := 55;
+    constant DBG_ADC_CODE_MAX     : natural := 56;
+    constant DBG_ADC_BIT_OR       : natural := 57;
+    constant DBG_ADC_BIT_AND      : natural := 58;
+    constant DBG_ADC_BIT_TOGGLE   : natural := 59;
+    constant DBG_ADC_OTR_CT       : natural := 60;
 
     -- =========================================================================
     -- Unpack FIFO data
@@ -346,7 +377,7 @@ architecture arch of axi_regs is
     signal config_reg  : std_logic_vector(31 downto 0) := (others => '0');
 
     -- Debug index register
-    signal dbg_index_reg : unsigned(5 downto 0) := (others => '0');
+    signal dbg_index_reg : unsigned(7 downto 0) := (others => '0');
 
     -- Pre-computed debug data (updated every cycle from dbg_index_reg)
     signal dbg_data_reg : std_logic_vector(31 downto 0) := (others => '0');
@@ -355,6 +386,8 @@ architecture arch of axi_regs is
     signal fifo_pop : std_logic := '0';
     signal snapshot_req_toggle : std_logic := '0';
     signal soft_reset_toggle_i : std_logic := '0';
+    signal overflow_recent : std_logic := '0';
+    signal overflow_hold_counter : unsigned(OVERFLOW_HOLD_COUNTER_BITS-1 downto 0) := (others => '0');
 
     -- Internal reset (active high, from AXI active-low)
     signal rst : std_logic;
@@ -388,10 +421,35 @@ begin
     debug_snapshot_req <= snapshot_req_toggle;
     quiet_score_shift_cfg <= unsigned(config_reg(2 downto 0));
     snr_ratio_shift_cfg   <= unsigned(config_reg(5 downto 3));
-    holdoff_cfg           <= unsigned(config_reg(17 downto 6));
+    holdoff_cfg           <= "00" & unsigned(config_reg(15 downto 6));
+    message_delay_cfg     <= unsigned(config_reg(23 downto 16));
+    output_tap_cfg        <= unsigned(config_reg(31 downto 24));
+    sample_capture_index  <= dbg_index_reg - to_unsigned(64, 8);
+    raw_capture_index     <= dbg_index_reg - to_unsigned(192, 8);
 
     -- Interrupt: level-sensitive, high when messages available
     irq <= not fifo_empty;
+
+    -- Keep the status overflow bit asserted for a short period after the most
+    -- recent FIFO overflow event so userspace can notice transient pressure
+    -- without treating the condition as latched forever.
+    overflow_status_window : process(S_AXI_ACLK)
+    begin
+        if rising_edge(S_AXI_ACLK) then
+            if rst = '1' then
+                overflow_recent <= '0';
+                overflow_hold_counter <= (others => '0');
+            elsif fifo_overflow = '1' then
+                overflow_recent <= '1';
+                overflow_hold_counter <= to_unsigned(OVERFLOW_HOLD_CYCLES - 1, overflow_hold_counter'length);
+            elsif overflow_hold_counter /= 0 then
+                overflow_recent <= '1';
+                overflow_hold_counter <= overflow_hold_counter - 1;
+            else
+                overflow_recent <= '0';
+            end if;
+        end if;
+    end process;
 
     -- =========================================================================
     -- Write Address Channel
@@ -453,7 +511,7 @@ begin
 
     -- =========================================================================
     -- Write Data to Registers
-    -- CONTROL (0x2C) and DBG_INDEX (0x34, 6-bit selector) are writable.
+    -- CONTROL (0x2C) and DBG_INDEX (0x34, 8-bit selector) are writable.
     -- =========================================================================
     write_regs : process(S_AXI_ACLK)
         variable addr_idx : natural;
@@ -464,7 +522,9 @@ begin
                 config_reg <= (others => '0');
                 config_reg(2 downto 0) <= std_logic_vector(to_unsigned(QUIET_SCORE_SHIFT, 3));
                 config_reg(5 downto 3) <= std_logic_vector(to_unsigned(SNR_RATIO_SHIFT, 3));
-                config_reg(17 downto 6) <= std_logic_vector(to_unsigned(PREAMBLE_HOLDOFF_DEFAULT, 12));
+                config_reg(15 downto 6) <= std_logic_vector(to_unsigned(PREAMBLE_HOLDOFF_DEFAULT, 10));
+                config_reg(23 downto 16) <= std_logic_vector(to_unsigned(50, 8));
+                config_reg(31 downto 24) <= std_logic_vector(to_unsigned(76, 8));
                 soft_reset_toggle_i <= '0';
                 dbg_index_reg <= (others => '0');
             else
@@ -491,7 +551,7 @@ begin
                         end if;
                     elsif addr_idx = IDX_DBG_INDEX then
                         if S_AXI_WSTRB(0) = '1' then
-                            dbg_index_reg <= unsigned(S_AXI_WDATA(5 downto 0));
+                            dbg_index_reg <= unsigned(S_AXI_WDATA(7 downto 0));
                         end if;
                     elsif addr_idx = IDX_CONFIG then
                         for i in 0 to 3 loop
@@ -513,6 +573,12 @@ begin
     dbg_preselect : process(S_AXI_ACLK)
     begin
         if rising_edge(S_AXI_ACLK) then
+            if dbg_index_reg >= to_unsigned(64, dbg_index_reg'length) and
+               dbg_index_reg < to_unsigned(192, dbg_index_reg'length) then
+                dbg_data_reg <= sample_capture_data;
+            elsif dbg_index_reg >= to_unsigned(192, dbg_index_reg'length) then
+                dbg_data_reg <= raw_capture_data;
+            else
             case to_integer(dbg_index_reg) is
                 when DBG_POWER_MAX      => dbg_data_reg <= std_logic_vector(resize(sample_power_max, 32));
                 when DBG_EDGE_THR_CT    => dbg_data_reg <= std_logic_vector(edge_thresh_count);
@@ -569,8 +635,15 @@ begin
                 when DBG_SAMPLE_FIFO_OVF_CT => dbg_data_reg <= std_logic_vector(sample_fifo_overflow_count);
                 when DBG_RAW_IQ_75PCT_CT  => dbg_data_reg <= std_logic_vector(raw_iq_75pct_count);
                 when DBG_RAW_IQ_87P5PCT_CT => dbg_data_reg <= std_logic_vector(raw_iq_87p5pct_count);
+                when DBG_ADC_CODE_MIN     => dbg_data_reg <= std_logic_vector(adc_code_min);
+                when DBG_ADC_CODE_MAX     => dbg_data_reg <= std_logic_vector(adc_code_max);
+                when DBG_ADC_BIT_OR       => dbg_data_reg <= std_logic_vector(adc_bit_or);
+                when DBG_ADC_BIT_AND      => dbg_data_reg <= std_logic_vector(adc_bit_and);
+                when DBG_ADC_BIT_TOGGLE   => dbg_data_reg <= std_logic_vector(adc_bit_toggle);
+                when DBG_ADC_OTR_CT       => dbg_data_reg <= std_logic_vector(adc_otr_count);
                 when others             => dbg_data_reg <= (others => '0');
             end case;
+            end if;
         end if;
     end process;
 
@@ -651,7 +724,7 @@ begin
                             status_word := (others => '0');
                             status_word(0) := not fifo_empty;
                             status_word(1) := fifo_full;
-                            status_word(2) := fifo_overflow;
+                            status_word(2) := overflow_recent;
                             status_word(14 downto 8) := std_logic_vector(fifo_count);
                             read_data_next := status_word;
 
@@ -671,7 +744,7 @@ begin
                             read_data_next := VERSION_REG;
 
                         when IDX_DBG_INDEX =>
-                            read_data_next(5 downto 0) := std_logic_vector(dbg_index_reg);
+                            read_data_next(7 downto 0) := std_logic_vector(dbg_index_reg);
 
                         when IDX_DBG_DATA =>
                             read_data_next := dbg_data_reg;

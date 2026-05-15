@@ -7,14 +7,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math"
 	"net"
 	"os"
 	"os/signal"
 	"runtime"
-	"strconv"
-	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -27,7 +23,6 @@ import (
 	"github.com/plane-watcher/plane-feeder/internal/gpsmon"
 	"github.com/plane-watcher/plane-feeder/internal/icao"
 	"github.com/plane-watcher/plane-feeder/internal/pps"
-	"github.com/plane-watcher/plane-feeder/internal/radio"
 	"github.com/plane-watcher/plane-feeder/internal/regs"
 	"github.com/plane-watcher/plane-feeder/internal/reorder"
 	"github.com/plane-watcher/plane-feeder/internal/server"
@@ -41,13 +36,11 @@ type statsSource struct {
 	deepDebug   bool
 	filter      *icao.Filter
 	beastSrv    *server.Server
-	rd          *radio.Radio
 	ppsWatcher  *pps.Watcher
 	msgCount    *atomic.Uint64
 	dropCount   *atomic.Uint64
 	msgRate     *atomic.Int64 // msgs/sec * 10 (fixed-point, written by poll loop)
 	crcPassRate *atomic.Int64 // CRC-valid msgs/sec * 10 (fixed-point)
-	guard       *gainGuard
 }
 
 func (s *statsSource) Stats(debug bool) web.StatsData {
@@ -78,17 +71,8 @@ func (s *statsSource) Stats(debug bool) web.StatsData {
 		d.SkippedEdges = ps.SkippedEdges
 	}
 
-	if s.rd != nil {
-		d.Radio = s.rd.ReadStatus()
-	}
-
 	if debug {
 		d.Debug = readDebugCounters(s.reader, s.deepDebug)
-		if s.guard != nil {
-			for k, v := range s.guard.DebugCounters() {
-				d.Debug[k] = v
-			}
-		}
 	}
 
 	return d
@@ -196,32 +180,21 @@ func queryGpsdPosition() (lat, lon, alt float64, err error) {
 }
 
 const (
-	defaultBaseAddr          = 0x43D00000
-	defaultBeastPort         = 30005
-	defaultHTTPPort          = 8080
-	defaultReorderWindow     = 75 * time.Millisecond
+	defaultBaseAddr           = 0x43C03000
+	defaultBeastPort          = 30005
+	defaultHTTPPort           = 8080
+	defaultReorderWindow      = 75 * time.Millisecond
 	defaultReorderMaxBuffered = 256
-	defaultGainDB            = "28"
-	defaultGainMode          = "manual"
-	defaultQuietScoreShift = 6
-	defaultSnrRatioShift   = 4
-	defaultHoldoff         = 512
-	defaultAutoGainMinDB      = 20.0
-	defaultAutoGainMaxDB      = 30.0
-	defaultAutoGainStepDownDB = 1.0
-	defaultAutoGainStepUpDB   = 1.0
-	defaultAutoGainHotNear    = 50
-	defaultAutoGainHot75      = 1000
-	defaultAutoGainHot87      = 100
-	defaultAutoGainHotHold    = 3
-	defaultAutoGainCalmHold   = 8
-	statusInterval           = 1 * time.Second
-	positionInterval         = 30 * time.Second
-	softResetSettleTime      = 5 * time.Millisecond
-	idlePollSleep            = 100 * time.Microsecond
-	defaultTrackChanDepth    = 256
-	defaultDecoderClockHz    = 100_000_000
-	defaultGPSDRetryInterval = 10 * time.Second
+	defaultQuietScoreShift    = 1
+	defaultSnrRatioShift      = 0
+	defaultHoldoff            = 512
+	statusInterval            = 1 * time.Second
+	positionInterval          = 30 * time.Second
+	softResetSettleTime       = 5 * time.Millisecond
+	idlePollSleep             = 100 * time.Microsecond
+	defaultTrackChanDepth     = 256
+	defaultDecoderClockHz     = 100_000_000
+	defaultGPSDRetryInterval  = 10 * time.Second
 )
 
 // receiverPosition holds the static receiver coordinates.
@@ -242,218 +215,6 @@ type radarcapeState struct {
 	lastPosition time.Time
 	position     *receiverPosition
 	initialised  bool
-}
-
-type gainGuard struct {
-	mu               sync.RWMutex
-	enabled          bool
-	rd               *radio.Radio
-	minGainDB        float64
-	maxGainDB        float64
-	stepDownDB       float64
-	stepUpDB         float64
-	hotNearThreshold uint32
-	hot87Threshold   uint32
-	hot75Threshold   uint32
-	hotHoldIntervals int
-	calmHoldIntervals int
-	hotStreak        int
-	calmStreak       int
-	last75           uint32
-	last87           uint32
-	lastNear         uint32
-	lastSat          uint32
-	primed           bool
-}
-
-func (g *gainGuard) Observe(now time.Time, currentGainDB float64, gainMode string, dbg map[string]uint32) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if !g.enabled || g.rd == nil {
-		return
-	}
-	if gainMode != "manual" {
-		g.hotStreak = 0
-		g.calmStreak = 0
-		return
-	}
-
-	cur75 := dbg["raw_iq_75pct_ct"]
-	cur87 := dbg["raw_iq_87p5pct_ct"]
-	curNear := dbg["raw_iq_nearrail_ct"]
-	curSat := dbg["raw_power_sat_ct"]
-	if !g.primed {
-		g.last75, g.last87, g.lastNear, g.lastSat = cur75, cur87, curNear, curSat
-		g.primed = true
-		return
-	}
-
-	d75 := saturatingDelta(cur75, g.last75)
-	d87 := saturatingDelta(cur87, g.last87)
-	dNear := saturatingDelta(curNear, g.lastNear)
-	dSat := saturatingDelta(curSat, g.lastSat)
-	g.last75, g.last87, g.lastNear, g.lastSat = cur75, cur87, curNear, curSat
-
-	overdriven := dSat > 0
-	hotByThreshold := dNear >= g.hotNearThreshold || d87 >= g.hot87Threshold || d75 >= g.hot75Threshold
-	hot := overdriven || hotByThreshold
-	calm := d75 == 0 && d87 == 0 && dNear == 0 && dSat == 0
-
-	if hot {
-		g.hotStreak++
-		g.calmStreak = 0
-	} else if calm {
-		g.calmStreak++
-		g.hotStreak = 0
-	} else {
-		g.hotStreak = 0
-		g.calmStreak = 0
-	}
-
-	requiredHotStreak := g.hotHoldIntervals
-	if overdriven {
-		requiredHotStreak = 1
-	}
-
-	if g.hotStreak >= requiredHotStreak {
-		next := maxFloat(g.minGainDB, currentGainDB-g.stepDownDB)
-		if next < currentGainDB {
-			if err := g.rd.SetGain(formatWholeGain(next)); err != nil {
-				log.Printf("WARNING: gain guard decrease %.0f -> %.0f dB failed: %v", currentGainDB, next, err)
-			} else {
-				log.Printf("gain guard: hot frontend (d75=%d d87=%d near=%d sat=%d), lowering gain %.0f -> %.0f dB",
-					d75, d87, dNear, dSat, currentGainDB, next)
-			}
-		}
-		g.hotStreak = 0
-		g.calmStreak = 0
-		return
-	}
-
-	if g.calmStreak >= g.calmHoldIntervals {
-		next := minFloat(g.maxGainDB, currentGainDB+g.stepUpDB)
-		if next > currentGainDB {
-			if err := g.rd.SetGain(formatWholeGain(next)); err != nil {
-				log.Printf("WARNING: gain guard increase %.0f -> %.0f dB failed: %v", currentGainDB, next, err)
-			} else {
-				log.Printf("gain guard: calm frontend for %d intervals, raising gain %.0f -> %.0f dB",
-					g.calmHoldIntervals, currentGainDB, next)
-			}
-		}
-		g.hotStreak = 0
-		g.calmStreak = 0
-	}
-}
-
-func (g *gainGuard) DebugCounters() map[string]uint32 {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	minGain := uint32(math.Round(g.minGainDB))
-	maxGain := uint32(math.Round(g.maxGainDB))
-	stepDown := uint32(math.Round(g.stepDownDB))
-	stepUp := uint32(math.Round(g.stepUpDB))
-	enabled := uint32(0)
-	if g.enabled {
-		enabled = 1
-	}
-	return map[string]uint32{
-		"auto_gain_guard_enabled":   enabled,
-		"auto_gain_min_db":          minGain,
-		"auto_gain_max_db":          maxGain,
-		"auto_gain_step_down_db":    stepDown,
-		"auto_gain_step_up_db":      stepUp,
-		"auto_gain_hot_near":        g.hotNearThreshold,
-		"auto_gain_hot75":           g.hot75Threshold,
-		"auto_gain_hot87":           g.hot87Threshold,
-		"auto_gain_hot_hold":        uint32(g.hotHoldIntervals),
-		"auto_gain_calm_hold":       uint32(g.calmHoldIntervals),
-	}
-}
-
-func (g *gainGuard) ApplyConfig(cfg web.GainGuardConfig) error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if cfg.Enabled != nil {
-		g.enabled = *cfg.Enabled
-		if !g.enabled {
-			g.hotStreak = 0
-			g.calmStreak = 0
-		}
-	}
-	if cfg.MinGainDB != nil {
-		g.minGainDB = *cfg.MinGainDB
-	}
-	if cfg.MaxGainDB != nil {
-		g.maxGainDB = *cfg.MaxGainDB
-	}
-	if g.minGainDB > g.maxGainDB {
-		return fmt.Errorf("min gain %.0f exceeds max gain %.0f", g.minGainDB, g.maxGainDB)
-	}
-	if cfg.StepDownDB != nil {
-		if *cfg.StepDownDB <= 0 {
-			return fmt.Errorf("step down must be > 0")
-		}
-		g.stepDownDB = *cfg.StepDownDB
-	}
-	if cfg.StepUpDB != nil {
-		if *cfg.StepUpDB <= 0 {
-			return fmt.Errorf("step up must be > 0")
-		}
-		g.stepUpDB = *cfg.StepUpDB
-	}
-	if cfg.HotNearThreshold != nil {
-		g.hotNearThreshold = *cfg.HotNearThreshold
-	}
-	if cfg.Hot75Threshold != nil {
-		g.hot75Threshold = *cfg.Hot75Threshold
-	}
-	if cfg.Hot87Threshold != nil {
-		g.hot87Threshold = *cfg.Hot87Threshold
-	}
-	if cfg.HotHoldIntervals != nil {
-		if *cfg.HotHoldIntervals < 1 {
-			return fmt.Errorf("hot hold must be >= 1")
-		}
-		g.hotHoldIntervals = *cfg.HotHoldIntervals
-	}
-	if cfg.CalmHoldIntervals != nil {
-		if *cfg.CalmHoldIntervals < 1 {
-			return fmt.Errorf("calm hold must be >= 1")
-		}
-		g.calmHoldIntervals = *cfg.CalmHoldIntervals
-	}
-	return nil
-}
-
-func saturatingDelta(cur, prev uint32) uint32 {
-	if cur >= prev {
-		return cur - prev
-	}
-	return cur
-}
-
-func parseGainDB(s string) (float64, error) {
-	s = strings.TrimSpace(strings.TrimSuffix(s, "dB"))
-	return strconv.ParseFloat(strings.TrimSpace(s), 64)
-}
-
-func formatWholeGain(v float64) string {
-	return fmt.Sprintf("%.0f", v)
-}
-
-func minFloat(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxFloat(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // update computes the desired mode from the current clock reference.
@@ -534,8 +295,6 @@ func main() {
 	radarcape := flag.Bool("radarcape", false, "Use Radarcape timestamp format (UTC via PPS + NTP)")
 	reorderWindow := flag.Duration("reorder-window", defaultReorderWindow, "Maximum TOA reordering hold window")
 	reorderMaxBuffered := flag.Int("reorder-max-buffered", defaultReorderMaxBuffered, "Maximum buffered messages before forcing ordered flush")
-	gain := flag.String("gain", defaultGainDB, "AD9361 RX gain in dB (initial manual tune)")
-	gainMode := flag.String("gain-mode", defaultGainMode, "AD9361 RX gain control mode (manual, slow_attack, fast_attack, hybrid)")
 	lat := flag.Float64("lat", 0, "Receiver latitude for CPR decode (0 = query gpsd)")
 	lon := flag.Float64("lon", 0, "Receiver longitude for CPR decode (0 = query gpsd)")
 	alt := flag.Float64("alt", 0, "Receiver altitude in metres (required with --lat/--lon for 0x35 position frames)")
@@ -547,16 +306,6 @@ func main() {
 	snrRatioShift := flag.Uint("snr-ratio-shift", defaultSnrRatioShift, "Initial snr_ratio_shift detector setting")
 	holdoff := flag.Uint("holdoff", defaultHoldoff, "Initial preamble holdoff in samples (0-4095)")
 	mock := flag.Bool("mock", false, "Use mock reader with empty FIFO (no hardware)")
-	autoGainGuard := flag.Bool("auto-gain-guard", false, "Enable PS-side frontend headroom guard with hysteretic gain adjustments")
-	autoGainMin := flag.Float64("auto-gain-min", defaultAutoGainMinDB, "Minimum manual gain in dB for --auto-gain-guard")
-	autoGainMax := flag.Float64("auto-gain-max", defaultAutoGainMaxDB, "Maximum manual gain in dB for --auto-gain-guard")
-	autoGainStepDown := flag.Float64("auto-gain-step-down", defaultAutoGainStepDownDB, "Gain step down in dB when the frontend stays hot")
-	autoGainStepUp := flag.Float64("auto-gain-step-up", defaultAutoGainStepUpDB, "Gain step up in dB when the frontend stays calm")
-	autoGainHotNear := flag.Uint("auto-gain-hot-near", defaultAutoGainHotNear, "raw_iq_nearrail delta threshold per guard interval that counts as hot")
-	autoGainHot75 := flag.Uint("auto-gain-hot75", defaultAutoGainHot75, "raw_iq_75pct delta threshold per guard interval that counts as hot")
-	autoGainHot87 := flag.Uint("auto-gain-hot87", defaultAutoGainHot87, "raw_iq_87p5pct delta threshold per guard interval that counts as hot")
-	autoGainHotHold := flag.Int("auto-gain-hot-hold", defaultAutoGainHotHold, "Consecutive hot guard intervals before lowering gain")
-	autoGainCalmHold := flag.Int("auto-gain-calm-hold", defaultAutoGainCalmHold, "Consecutive calm guard intervals before raising gain")
 	flag.Parse()
 
 	// If no position specified, try to get it from gpsd.
@@ -603,27 +352,8 @@ func main() {
 		versionWord>>16, (versionWord>>8)&0xFF, buildID, buildID&0x8000 != 0)
 	log.Printf("deep debug build: %v", deepDebug)
 
-	// --- 3. Tune radio (non-fatal on failure) ---
-	var rd *radio.Radio
-	if !*mock {
-		var err error
-		rd, err = radio.Open()
-		if err != nil {
-			log.Printf("WARNING: radio not found: %v", err)
-		} else if err := rd.Tune(*gain); err != nil {
-			log.Printf("WARNING: radio tune failed: %v", err)
-		} else {
-			log.Printf("radio tuned: 1090 MHz, gain=%s dB", *gain)
-			if err := rd.SetGainMode(*gainMode); err != nil {
-				log.Printf("WARNING: set gain mode %q failed: %v", *gainMode, err)
-			} else {
-				log.Printf("gain mode: %s", *gainMode)
-			}
-		}
-	}
-
 	// --- 4. Reset and enable decoder ---
-	// Pulse soft reset to clear stale FIFO state (including sticky overflow flag).
+	// Pulse soft reset to clear stale FIFO state before the feeder starts.
 	reader.Write32(regs.RegControl, regs.ControlSoftReset)
 	time.Sleep(softResetSettleTime)
 	reader.Write32(regs.RegControl, regs.ControlEnable)
@@ -776,32 +506,13 @@ func main() {
 		deepDebug:   deepDebug,
 		filter:      filter,
 		beastSrv:    beastSrv,
-		rd:          rd,
 		ppsWatcher:  ppsWatcher,
 		msgCount:    &msgCount,
 		dropCount:   &dropCount,
 		msgRate:     &msgRate,
 		crcPassRate: &crcPassRate,
 	}
-	guard := &gainGuard{
-		enabled:           *autoGainGuard,
-		rd:                rd,
-		minGainDB:         *autoGainMin,
-		maxGainDB:         *autoGainMax,
-		stepDownDB:        *autoGainStepDown,
-		stepUpDB:          *autoGainStepUp,
-		hotNearThreshold:  uint32(*autoGainHotNear),
-		hot75Threshold:    uint32(*autoGainHot75),
-		hot87Threshold:    uint32(*autoGainHot87),
-		hotHoldIntervals:  *autoGainHotHold,
-		calmHoldIntervals: *autoGainCalmHold,
-	}
-	ss.guard = guard
-	var rc web.RadioController
-	if rd != nil {
-		rc = rd
-	}
-	webSrv := web.New(trk, ss, rc, dc, guard, rejectedFrames, gpsCollector)
+	webSrv := web.New(trk, ss, dc, rejectedFrames, gpsCollector)
 	if err := webSrv.Start(*httpPort); err != nil {
 		log.Fatalf("web server: %v", err)
 	}
@@ -820,11 +531,6 @@ func main() {
 		lastCrcPassSnap uint32
 		lastReadAt      time.Time
 	)
-	if guard.enabled {
-		log.Printf("gain guard enabled: min=%.0f max=%.0f down=%.0f up=%.0f hotNear>=%d hot75>=%d hot87>=%d hot_hold=%d calm_hold=%d",
-			guard.minGainDB, guard.maxGainDB, guard.stepDownDB, guard.stepUpDB,
-			guard.hotNearThreshold, guard.hot75Threshold, guard.hot87Threshold, guard.hotHoldIntervals, guard.calmHoldIntervals)
-	}
 
 	emit := func(msg regs.Message, clockRef *pps.ClockRef) {
 		now := time.Now()
@@ -882,23 +588,11 @@ func main() {
 			curMsgCt := msgCount.Load()
 			elapsed := time.Since(lastStats).Seconds()
 			curCrcPass := regs.ReadDbg(reader, regs.DbgCrcPassCt)
-			var dbg map[string]uint32
 			if elapsed > 0 && lastStats != (time.Time{}) {
 				r := float64(curMsgCt-lastMsgSnap) / elapsed
 				msgRate.Store(int64(r * 10))
 				cr := float64(curCrcPass-lastCrcPassSnap) / elapsed
 				crcPassRate.Store(int64(cr * 10))
-			}
-			if guard.enabled && rd != nil {
-				dbg = readDebugCounters(reader, deepDebug)
-				status := rd.ReadStatus()
-				if status.GainMode != "" {
-					if gainNow, err := parseGainDB(status.GainDB); err != nil {
-						log.Printf("WARNING: gain guard parse gain %q failed: %v", status.GainDB, err)
-					} else {
-						guard.Observe(time.Now(), gainNow, status.GainMode, dbg)
-					}
-				}
 			}
 			lastMsgSnap = curMsgCt
 			lastCrcPassSnap = curCrcPass

@@ -22,7 +22,6 @@ library ieee;
     use ieee.numeric_std.all;
 
 package adsb_pkg is
-
     -- =========================================================================
     -- Sample Rate and Timing
     -- =========================================================================
@@ -144,6 +143,7 @@ package adsb_pkg is
     -- keeping the drop rate manageable via PS-side filtering.
     -- The PS can override this at runtime via the AXI config register.
     constant PREAMBLE_HOLDOFF_DEFAULT : integer := 32 * SPS * SPB;  -- 512 samples = 32 µs
+
 
     -- =========================================================================
     -- Detection Thresholds

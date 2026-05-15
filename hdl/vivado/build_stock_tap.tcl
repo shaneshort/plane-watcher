@@ -5,6 +5,9 @@
 #          -tclargs <vendor_hdl_root> [base_addr] [jobs] [build_id] [deep_debug]
 # =============================================================================
 
+puts stderr "ERROR: build_stock_tap.tcl is retired. The active firmware path is tools/rebuild.sh -> build_smartzynq_phase1.tcl."
+exit 1
+
 if {[llength $argv] < 1} {
     puts stderr "usage: vivado -mode batch -source build_stock_tap.tcl -tclargs <vendor_hdl_root> ?base_addr? ?jobs? ?build_id? ?deep_debug?"
     exit 1
@@ -105,7 +108,6 @@ while {[gets $in_f line] >= 0} {
 close $in_f
 close $out_f
 add_files -norecurse $local_system_constr
-add_files -fileset constrs_1 -norecurse [file join $script_dir constr plane_watcher_stock_tap_io.xdc]
 add_files -norecurse [file join $ad_hdl_dir library common ad_iobuf.v]
 
 puts "=== Step 2/4: Creating stock Pluto block design ==="

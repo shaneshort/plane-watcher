@@ -30,26 +30,37 @@ type composerModel struct {
 
 func newComposerModel(cfg *config.Config) *composerModel {
 	m := &composerModel{cfg: cfg}
-	for _, s := range cfg.LastRun.Stages {
-		switch s {
-		case "bitstream":
-			m.sel.Bitstream = true
-		case "petalinux":
-			m.sel.Petalinux = true
-		case "ps-slipstream":
-			m.sel.PSSlipstream = true
-		case "ps-hotswap":
-			m.sel.PSHotswap = true
-		}
-	}
-	switch cfg.LastRun.Deploy {
-	case "ssh":
+	if len(cfg.LastRun.Stages) == 0 && cfg.LastRun.Deploy == "" {
+		// First-run defaults: the common "full rebuild and deploy" recipe.
+		// Captured from the typical workflow; subsequent runs persist
+		// whatever the user actually used via SaveLastRun.
+		m.sel.Bitstream = true
+		m.sel.Petalinux = true
+		m.sel.PSSlipstream = true
 		m.deploy = build.DeploySSH
-	case "sd":
-		m.deploy = build.DeploySD
+		m.sel.Reboot = true
+	} else {
+		for _, s := range cfg.LastRun.Stages {
+			switch s {
+			case "bitstream":
+				m.sel.Bitstream = true
+			case "petalinux":
+				m.sel.Petalinux = true
+			case "ps-slipstream":
+				m.sel.PSSlipstream = true
+			case "ps-hotswap":
+				m.sel.PSHotswap = true
+			}
+		}
+		switch cfg.LastRun.Deploy {
+		case "ssh":
+			m.deploy = build.DeploySSH
+		case "sd":
+			m.deploy = build.DeploySD
+		}
+		m.sel.Reboot = cfg.Defaults.RebootAfterSSHDeploy
 	}
 	m.sel.Deploy = m.deploy
-	m.sel.Reboot = cfg.Defaults.RebootAfterSSHDeploy
 	m.items = []composerItem{
 		{label: "Bitstream (Vivado)", get: func(s *build.Selections) bool { return s.Bitstream }, set: func(s *build.Selections, v bool) { s.Bitstream = v }},
 		{label: "Petalinux full build", get: func(s *build.Selections) bool { return s.Petalinux }, set: func(s *build.Selections, v bool) { s.Petalinux = v }},
@@ -104,10 +115,17 @@ func (m *composerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.openAdv = true
 			return m, tea.Quit
 		case "r":
-			if err := m.sel.Validate(); err == nil {
-				m.startRun = true
-				return m, tea.Quit
+			if err := m.sel.Validate(); err != nil {
+				return m, nil
 			}
+			// Refuse to exit the composer with an empty plan; the run
+			// screen would otherwise show nothing for a millisecond and
+			// then exit, which reads as "just exits" to the user.
+			if !m.sel.Bitstream && !m.sel.Petalinux && !m.sel.PSSlipstream && !m.sel.PSHotswap {
+				return m, nil
+			}
+			m.startRun = true
+			return m, tea.Quit
 		}
 	}
 	return m, nil
@@ -120,68 +138,84 @@ func (m *composerModel) toggleAtCursor() {
 	}
 }
 
-var (
-	headingStyle = lipgloss.NewStyle().Bold(true).Underline(true)
-	hintStyle    = lipgloss.NewStyle().Faint(true)
-)
-
 func (m *composerModel) View() string {
-	var b strings.Builder
-	b.WriteString(headingStyle.Render("builder"))
-	b.WriteString("\n\n")
-	b.WriteString(headingStyle.Render("Stages"))
-	b.WriteString("\n")
+	// Stages section.
+	var stages strings.Builder
 	for i, it := range m.items {
-		cursor := "  "
+		cursor := " "
 		if i == m.cursor {
-			cursor = "> "
+			cursor = styleCursor
 		}
-		mark := "[ ]"
+		mark := styleUncheckedMark
 		if it.get(&m.sel) {
-			mark = "[x]"
+			mark = styleCheckedMark
 		}
-		b.WriteString(fmt.Sprintf("%s%s %s\n", cursor, mark, it.label))
+		label := it.label
+		if i == m.cursor {
+			label = styleYellow.Render(label)
+		}
+		stages.WriteString(fmt.Sprintf("%s %s %s\n", cursor, mark, label))
 	}
-	b.WriteString("\n")
-	b.WriteString(headingStyle.Render("Deploy"))
-	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  (%s) 1 None\n", radio(m.deploy == build.DeployNone)))
-	b.WriteString(fmt.Sprintf("  (%s) 2 SSH\n", radio(m.deploy == build.DeploySSH)))
-	b.WriteString(fmt.Sprintf("  (%s) 3 SD\n", radio(m.deploy == build.DeploySD)))
-	rebootMark := "[ ]"
+	stagesBox := styleBorder.Render(
+		styleHeading.Render("Stages") + "\n" + strings.TrimRight(stages.String(), "\n"),
+	)
+
+	// Deploy section.
+	var deploy strings.Builder
+	deploy.WriteString(fmt.Sprintf("(%s) 1  None\n", radio(m.deploy == build.DeployNone)))
+	deploy.WriteString(fmt.Sprintf("(%s) 2  SSH\n", radio(m.deploy == build.DeploySSH)))
+	deploy.WriteString(fmt.Sprintf("(%s) 3  SD\n", radio(m.deploy == build.DeploySD)))
+	rebootMark := styleUncheckedMark
 	if m.sel.Reboot {
-		rebootMark = "[x]"
+		rebootMark = styleCheckedMark
 	}
-	rebootLine := fmt.Sprintf("  %s b Reboot after SSH deploy", rebootMark)
+	rebootLine := fmt.Sprintf("%s b  Reboot after SSH deploy", rebootMark)
 	if m.sel.Deploy != build.DeploySSH {
-		rebootLine = hintStyle.Render(rebootLine + "  (disabled)")
+		rebootLine = styleHint.Render(rebootLine + "  (disabled)")
 	}
-	b.WriteString(rebootLine)
-	b.WriteString("\n\n")
-	b.WriteString(headingStyle.Render("Effective plan"))
-	b.WriteString("\n")
-	if plan, err := build.BuildPlan(m.sel, m.cfg); err != nil {
-		b.WriteString(hintStyle.Render("  invalid: " + err.Error()))
+	deploy.WriteString(rebootLine)
+	deployBox := styleBorder.Render(
+		styleHeading.Render("Deploy") + "\n" + deploy.String(),
+	)
+
+	twoCol := lipgloss.JoinHorizontal(lipgloss.Top, stagesBox, "  ", deployBox)
+
+	// Effective plan.
+	var plan string
+	if p, err := build.BuildPlan(m.sel, m.cfg); err != nil {
+		plan = styleHint.Render("invalid: " + err.Error())
 	} else {
-		names := make([]string, len(plan.Steps))
-		for i, s := range plan.Steps {
-			names[i] = s.Name()
+		names := make([]string, len(p.Steps))
+		for i, s := range p.Steps {
+			names[i] = styleYellow.Render(s.Name())
 		}
 		if len(names) == 0 {
-			b.WriteString(hintStyle.Render("  (nothing selected)"))
+			plan = styleHint.Render("(nothing selected)")
 		} else {
-			b.WriteString("  " + strings.Join(names, " → "))
+			plan = strings.Join(names, styleArrow)
 		}
 	}
+	planBox := styleBorder.Render(
+		styleHeading.Render("Effective plan") + "\n" + plan,
+	)
+
+	hint := styleHint.Render("[space] toggle   [1/2/3] deploy   [b] reboot   [a] advanced   [r] run   [q] quit")
+
+	var b strings.Builder
+	b.WriteString(styleTitle.Render("builder"))
 	b.WriteString("\n\n")
-	b.WriteString(hintStyle.Render("[space] toggle  [1/2/3] deploy  [b] reboot  [a] advanced  [r] run  [q] quit"))
+	b.WriteString(twoCol)
+	b.WriteString("\n\n")
+	b.WriteString(planBox)
+	b.WriteString("\n\n")
+	b.WriteString(hint)
 	b.WriteString("\n")
 	return b.String()
 }
 
 func radio(on bool) string {
 	if on {
-		return "•"
+		return lipgloss.NewStyle().Foreground(clrYellowHi).Bold(true).Render("•")
 	}
 	return " "
 }

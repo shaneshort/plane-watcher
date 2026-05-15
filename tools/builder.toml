@@ -3,8 +3,8 @@
 
 [services]
 # Map of cross-built binary name -> command to run via ssh after a hot-swap.
-# Add new entries as services land on the target.
-plane-feeder = "/etc/init.d/S99plane-feeder restart"
+# Add entries as init scripts land on the target.
+plane-feeder = "/etc/init.d/plane-feeder restart"
 
 [defaults]
 reboot_after_ssh_deploy = false

@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	baseAddr := flag.Uint64("base-addr", 0x43D00000, "AXI register base address")
+	baseAddr := flag.Uint64("base-addr", 0x43C03000, "AXI register base address")
 	interval := flag.Duration("interval", 1*time.Second, "poll interval")
 	flag.Parse()
 

@@ -1,12 +1,23 @@
 #!/bin/bash
+export PATH=$PATH:/usr/local/go/bin
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CONFIG_FILE="${CONFIG_FILE:-$REPO_ROOT/tools/plane_watcher.env}"
+
+if [[ -f "$CONFIG_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$CONFIG_FILE"
+fi
+
 GOOS="${GOOS:-linux}"
 GOARCH="${GOARCH:-arm}"
 GOARM="${GOARM:-7}"
 GOCACHE="${GOCACHE:-/tmp/plane_watcher_gocache}"
-REMOTE_HOST="${REMOTE_HOST:-root@pluto.local}"
+TARGET_HOST="${TARGET_HOST:-root@planewatcher.local}"
+SSHPASS_PASSWORD="${SSHPASS_PASSWORD:-planewatcher}"
+REMOTE_HOST="${REMOTE_HOST:-$TARGET_HOST}"
 REMOTE_DIR="${REMOTE_DIR:-/usr/local/bin/}"
 TARGET="${GOOS}-${GOARCH}v${GOARM}"
 OUT_DIR="${OUT_DIR:-$SCRIPT_DIR/bin/$TARGET}"
@@ -14,19 +25,27 @@ OUT_DIR="${OUT_DIR:-$SCRIPT_DIR/bin/$TARGET}"
 # where the remote host is unreachable). Defaults to 1.
 DEPLOY="${DEPLOY:-1}"
 
+#CMDS=(
+#  beast-client
+#  collect-stats
+#  fifo-monitor
+#  plane-feeder
+#  pps-check
+#  regdump
+#  regpeek
+#  watch-stats
+#  ubx
+#)
 CMDS=(
-  beast-client
-  collect-stats
-  fifo-monitor
-  plane-feeder
-  pps-check
-  regdump
-  regpeek
-  sweep-gain
-  tune-detector
-  watch-stats
-  ubx
-)
+        plane-feeder
+	dump-capture
+	regpeek
+	regdump
+	sweep-align
+	tune-detector
+	ubx
+	)
+
 
 SCRIPTS=()
 
@@ -65,11 +84,27 @@ if [[ ${#SCRIPTS[@]} -gt 0 ]]; then
 fi
 
 if [[ "$DEPLOY" == "1" ]]; then
+  if ! command -v sshpass >/dev/null; then
+    echo "error: sshpass not installed (required for password-based SSH deploy)" >&2
+    exit 1
+  fi
+
+  SSH_COMMON_OPTS=(
+    -F /dev/null
+    -o StrictHostKeyChecking=no
+    -o UserKnownHostsFile=/dev/null
+    -o CheckHostIP=no
+    -o PubkeyAuthentication=no
+  )
+
   # SCP to /tmp then atomic mv to avoid ETXTBSY on running binaries.
   echo "Staging to ${REMOTE_HOST}:/tmp/"
-  sshpass -panalog scp -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oCheckHostIP=no -O "${DEPLOY_FILES[@]}" "${REMOTE_HOST}:/tmp/"
-  echo "Moving into ${REMOTE_DIR}"
-  sshpass -panalog ssh ${REMOTE_HOST} "for f in ${CMDS[*]}; do mv -f /tmp/\$f ${REMOTE_DIR}; done && /etc/init.d/S99plane-feeder restart"
+  sshpass -p"$SSHPASS_PASSWORD" scp "${SSH_COMMON_OPTS[@]}" -O \
+    "${DEPLOY_FILES[@]}" "${REMOTE_HOST}:/tmp/"
+  #echo "Moving into ${REMOTE_DIR}"
+  #sshpass -p"$SSHPASS_PASSWORD" ssh "${SSH_COMMON_OPTS[@]}" "${REMOTE_HOST}" \
+  #  "for f in ${CMDS[*]}; do mv -f /tmp/\$f ${REMOTE_DIR}; done"
+     # && /etc/init.d/S99plane-feeder restart"
 else
   echo "DEPLOY=0 set — skipping scp to ${REMOTE_HOST}"
 fi

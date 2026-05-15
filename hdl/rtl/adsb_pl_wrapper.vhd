@@ -32,8 +32,18 @@ entity adsb_pl_wrapper is
         sample_reset  : in  std_logic;
         sample_power  : in  std_logic_vector(INPUT_POWER_WIDTH-1 downto 0);
         sample_valid  : in  std_logic;
+        raw_capture_data : in std_logic_vector(31 downto 0);
+        adc_code_min  : in std_logic_vector(31 downto 0);
+        adc_code_max  : in std_logic_vector(31 downto 0);
+        adc_bit_or    : in std_logic_vector(31 downto 0);
+        adc_bit_and   : in std_logic_vector(31 downto 0);
+        adc_bit_toggle : in std_logic_vector(31 downto 0);
+        adc_otr_count : in std_logic_vector(31 downto 0);
         pps_in        : in  std_logic;
         irq           : out std_logic;
+        soft_reset_toggle_out : out std_logic;
+        sample_capture_trigger_toggle_out : out std_logic;
+        raw_capture_index_out : out unsigned(7 downto 0);
 
         -- AXI4-Lite slave interface
         S_AXI_ACLK    : in  std_logic;
@@ -116,7 +126,16 @@ begin
             rx_valid_count     => (others => '0'),
             sample_valid_count => (others => '0'),
             rx_clk_count       => (others => '0'),
-            soft_reset_toggle_out => open,
+            raw_capture_data   => raw_capture_data,
+            adc_code_min       => unsigned(adc_code_min),
+            adc_code_max       => unsigned(adc_code_max),
+            adc_bit_or         => unsigned(adc_bit_or),
+            adc_bit_and        => unsigned(adc_bit_and),
+            adc_bit_toggle     => unsigned(adc_bit_toggle),
+            adc_otr_count      => unsigned(adc_otr_count),
+            soft_reset_toggle_out => soft_reset_toggle_out,
+            sample_capture_trigger_toggle_out => sample_capture_trigger_toggle_out,
+            raw_capture_index_out => raw_capture_index_out,
             irq           => irq,
             S_AXI_ACLK    => S_AXI_ACLK,
             S_AXI_ARESETN => S_AXI_ARESETN,

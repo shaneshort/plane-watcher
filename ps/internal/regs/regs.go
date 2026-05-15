@@ -37,8 +37,12 @@ const (
 const (
 	ConfigQuietScoreShiftMask = 0x7
 	ConfigSnrRatioShiftMask   = 0x7 << 3
-	ConfigHoldoffMask         = 0xFFF << 6
+	ConfigHoldoffMask         = 0x3FF << 6
 	ConfigHoldoffShift        = 6
+	ConfigMessageDelayMask    = 0xFF << 16
+	ConfigMessageDelayShift   = 16
+	ConfigOutputTapMask       = 0xFF << 24
+	ConfigOutputTapShift      = 24
 )
 
 // Status register bit masks.
@@ -50,61 +54,71 @@ const (
 
 // Debug counter indices (write to RegDbgIndex, read from RegDbgData).
 const (
-	DbgPowerMax        = 0
-	DbgEdgeThrCt       = 1
-	DbgPowerThrCt      = 2
-	DbgEdgeCt          = 3
-	DbgSomCt           = 4
-	DbgMsgCt           = 5
-	DbgEdgeShapeCt     = 6
-	DbgEdgeQualCt      = 7
-	DbgPrePassCt       = 8
-	DbgPreDetCt        = 9
-	DbgAggValidCt      = 10
-	DbgFifoWrCt        = 11
-	DbgRxValidCt       = 12
-	DbgSmpValidCt      = 13
-	DbgCoreClkCt       = 14
-	DbgCoreInValCt     = 15
-	DbgCoreState       = 16
-	DbgPreAbsCt        = 17
-	DbgPreQuietCt      = 18
-	DbgPreSnrCt        = 19
-	DbgPreHoldoffCt    = 20
-	DbgRxClkCt         = 21
-	DbgSmallestDoneCt  = 22
-	DbgInvalidDfCt     = 23
-	DbgCrcAttemptCt    = 24
-	DbgCrcPassCt       = 25
-	DbgCrcExhaustCt    = 26
-	DbgCrc0W0          = 27
-	DbgCrc0W1          = 28
-	DbgCrc0W2          = 29
-	DbgCrc0W3          = 30
-	DbgPreQaFailCt     = 31
-	DbgPreQbFailCt     = 32
-	DbgPreQcFailCt     = 33
-	DbgPreQdFailCt     = 34
-	DbgPrePeakAge      = 35
-	DbgPreNoFreeCt     = 36
-	DbgPreBusyDropCt   = 37
-	DbgDecBusyMax      = 38
-	DbgAggDropCt       = 39
-	DbgDf4Ct           = 40
-	DbgDf5Ct           = 41
-	DbgDf11Ct          = 42
-	DbgDf17Ct          = 43
-	DbgDf18Ct          = 44
-	DbgCandDf4Ct       = 45
-	DbgCandDf5Ct       = 46
-	DbgCandDf11Ct      = 47
-	DbgRawPowerMax     = 48
-	DbgRawPowerThrCt   = 49
-	DbgRawIqNearrailCt = 50
-	DbgRawPowerSatCt   = 51
-	DbgSampleFifoOvfCt = 52
-	DbgRawIq75PctCt    = 53
-	DbgRawIq87P5PctCt  = 54
+	DbgPowerMax           = 0
+	DbgEdgeThrCt          = 1
+	DbgPowerThrCt         = 2
+	DbgEdgeCt             = 3
+	DbgSomCt              = 4
+	DbgMsgCt              = 5
+	DbgEdgeShapeCt        = 6
+	DbgEdgeQualCt         = 7
+	DbgPrePassCt          = 8
+	DbgPreDetCt           = 9
+	DbgAggValidCt         = 10
+	DbgFifoWrCt           = 11
+	DbgRxValidCt          = 12
+	DbgSmpValidCt         = 13
+	DbgCoreClkCt          = 14
+	DbgCoreInValCt        = 15
+	DbgCoreState          = 16
+	DbgPreAbsCt           = 17
+	DbgPreQuietCt         = 18
+	DbgPreSnrCt           = 19
+	DbgPreHoldoffCt       = 20
+	DbgRxClkCt            = 21
+	DbgSmallestDoneCt     = 22
+	DbgInvalidDfCt        = 23
+	DbgCrcAttemptCt       = 24
+	DbgCrcPassCt          = 25
+	DbgCrcExhaustCt       = 26
+	DbgCrc0W0             = 27
+	DbgCrc0W1             = 28
+	DbgCrc0W2             = 29
+	DbgCrc0W3             = 30
+	DbgPreQaFailCt        = 31
+	DbgPreQbFailCt        = 32
+	DbgPreQcFailCt        = 33
+	DbgPreQdFailCt        = 34
+	DbgPrePeakAge         = 35
+	DbgPreNoFreeCt        = 36
+	DbgPreBusyDropCt      = 37
+	DbgDecBusyMax         = 38
+	DbgAggDropCt          = 39
+	DbgDf4Ct              = 40
+	DbgDf5Ct              = 41
+	DbgDf11Ct             = 42
+	DbgDf17Ct             = 43
+	DbgDf18Ct             = 44
+	DbgCandDf4Ct          = 45
+	DbgCandDf5Ct          = 46
+	DbgCandDf11Ct         = 47
+	DbgRawPowerMax        = 48
+	DbgRawPowerThrCt      = 49
+	DbgRawIqNearrailCt    = 50
+	DbgRawPowerSatCt      = 51
+	DbgSampleFifoOvfCt    = 52
+	DbgRawIq75PctCt       = 53
+	DbgRawIq87P5PctCt     = 54
+	DbgAdcCodeMin         = 55
+	DbgAdcCodeMax         = 56
+	DbgAdcBitOr           = 57
+	DbgAdcBitAnd          = 58
+	DbgAdcBitToggle       = 59
+	DbgAdcOtrCt           = 60
+	DbgSampleCaptureBase  = 64
+	DbgSampleCaptureCount = 128
+	DbgRawCaptureBase     = 192
+	DbgRawCaptureCount    = 64
 )
 
 // RegisterReader abstracts AXI register access.
@@ -153,11 +167,31 @@ func (c *ConfigWriter) SetSnrRatioShift(val uint32) error {
 }
 
 func (c *ConfigWriter) SetHoldoff(val uint32) error {
-	if val > 4095 {
-		return fmt.Errorf("holdoff %d out of range (0-4095)", val)
+	if val > 1023 {
+		return fmt.Errorf("holdoff %d out of range (0-1023)", val)
 	}
 	cur := c.r.Read32(RegConfig)
 	cur = (cur &^ ConfigHoldoffMask) | ((val << ConfigHoldoffShift) & ConfigHoldoffMask)
+	c.r.Write32(RegConfig, cur)
+	return nil
+}
+
+func (c *ConfigWriter) SetMessageDelay(val uint32) error {
+	if val > 255 {
+		return fmt.Errorf("message_delay %d out of range (0-255)", val)
+	}
+	cur := c.r.Read32(RegConfig)
+	cur = (cur &^ ConfigMessageDelayMask) | ((val << ConfigMessageDelayShift) & ConfigMessageDelayMask)
+	c.r.Write32(RegConfig, cur)
+	return nil
+}
+
+func (c *ConfigWriter) SetOutputTap(val uint32) error {
+	if val > 255 {
+		return fmt.Errorf("output_tap %d out of range (0-255)", val)
+	}
+	cur := c.r.Read32(RegConfig)
+	cur = (cur &^ ConfigOutputTapMask) | ((val << ConfigOutputTapShift) & ConfigOutputTapMask)
 	c.r.Write32(RegConfig, cur)
 	return nil
 }

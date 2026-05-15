@@ -8,7 +8,6 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -25,31 +24,24 @@ type statsData struct {
 	ICAOCount   int               `json:"icao_count"`
 	Aircraft    int               `json:"aircraft_count"`
 	Overflow    bool              `json:"overflow"`
-	Radio       radioStatus       `json:"radio"`
 	Debug       map[string]uint32 `json:"debug"`
 }
 
-type radioStatus struct {
-	GainMode string `json:"gain_mode"`
-	GainDB   string `json:"gain_db"`
-	RSSI     string `json:"rssi"`
-}
-
 type sample struct {
-	At            time.Time
-	MsgRate       float64
-	ValidRate     float64
-	DropRate      float64
-	InvalidDFRate float64
-	ValidRatio    float64
+	At              time.Time
+	MsgRate         float64
+	ValidRate       float64
+	DropRate        float64
+	InvalidDFRate   float64
+	ValidRatio      float64
 	CrcPreDetRatio  float64
 	CrcPrePassRatio float64
 	DropMsgRatio    float64
-	Aircraft      float64
-	IQ75Rate      float64
-	IQ87Rate      float64
-	NearrailRate  float64
-	PwrSatRate    float64
+	Aircraft        float64
+	IQ75Rate        float64
+	IQ87Rate        float64
+	NearrailRate    float64
+	PwrSatRate      float64
 }
 
 type pollResult struct {
@@ -73,13 +65,13 @@ type model struct {
 	width  int
 	height int
 
-	last    *statsData
-	prev    *statsData
-	prevAt  time.Time
-	samples []sample
-	lastErr error
+	last          *statsData
+	prev          *statsData
+	prevAt        time.Time
+	samples       []sample
+	lastErr       error
 	controlStatus string
-	polling bool
+	polling       bool
 }
 
 var (
@@ -115,7 +107,7 @@ var (
 )
 
 func main() {
-	baseURL := flag.String("base-url", "http://pluto.local:8080", "plane-feeder base URL")
+	baseURL := flag.String("base-url", "http://planewatcher.local:8080", "plane-feeder base URL")
 	interval := flag.Duration("interval", 2*time.Second, "poll interval")
 	history := flag.Int("history", 90, "number of samples to keep in charts")
 	timeout := flag.Duration("timeout", 1500*time.Millisecond, "HTTP request timeout")
@@ -130,11 +122,11 @@ func main() {
 	}
 
 	m := model{
-		client: &http.Client{Timeout: *timeout},
-		baseURL: strings.TrimRight(*baseURL, "/"),
+		client:   &http.Client{Timeout: *timeout},
+		baseURL:  strings.TrimRight(*baseURL, "/"),
 		interval: *interval,
-		history: *history,
-		polling: true,
+		history:  *history,
+		polling:  true,
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -159,10 +151,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.prev = nil
 			m.prevAt = time.Time{}
 			return m, nil
-		case "+", "=":
-			return m, m.adjustGainCmd(1)
-		case "-", "_":
-			return m, m.adjustGainCmd(-1)
 		case "]":
 			return m, m.adjustQuietCmd(1)
 		case "[":
@@ -275,7 +263,7 @@ func (m model) renderHeader(width int) string {
 	}
 	left := titleStyle.Render("Plane Watcher Tuning Dashboard")
 	right := dimStyle.Render(fmt.Sprintf("poll %s  history %d  q quit  c clear", m.interval, m.history))
-	keys := dimStyle.Render("+/- gain  [/ ] quiet  {/ } snr")
+	keys := dimStyle.Render("[/ ] quiet  {/ } snr")
 	line := lipgloss.PlaceHorizontal(width, lipgloss.Left, left)
 	meta := lipgloss.PlaceHorizontal(width, lipgloss.Left, fmt.Sprintf("status %s", status))
 	control := dimStyle.Render("control idle")
@@ -289,8 +277,6 @@ func (m model) renderSummary() string {
 	s := m.last
 	latest := latestSample(m.samples)
 	return strings.Join([]string{
-		kv("Gain", fmt.Sprintf("%s  %s", s.Radio.GainDB, s.Radio.GainMode)),
-		kv("RSSI", s.Radio.RSSI),
 		kv("Msgs", fmt.Sprintf("%d", s.MsgCount)),
 		kv("Drops", fmt.Sprintf("%d", s.DropCount)),
 		kv("Valid:Invalid", formatRatio(latest.ValidRatio)),
@@ -367,24 +353,6 @@ func (m model) pollCmd() tea.Cmd {
 	}
 }
 
-func (m model) adjustGainCmd(delta int) tea.Cmd {
-	if m.last == nil {
-		return func() tea.Msg { return controlResult{Kind: "gain", Err: fmt.Errorf("no stats yet")} }
-	}
-	current, err := parseGainDB(m.last.Radio.GainDB)
-	if err != nil {
-		return func() tea.Msg { return controlResult{Kind: "gain", Err: err} }
-	}
-	next := current + float64(delta)
-	if next < 0 {
-		next = 0
-	}
-	if next > 73 {
-		next = 73
-	}
-	return m.postGainCmd(fmt.Sprintf("%.0f", next))
-}
-
 func (m model) adjustQuietCmd(delta int) tea.Cmd {
 	if m.last == nil {
 		return func() tea.Msg { return controlResult{Kind: "quiet", Err: fmt.Errorf("no stats yet")} }
@@ -401,28 +369,6 @@ func (m model) adjustSnrCmd(delta int) tea.Cmd {
 	cur := int(debugValue(m.last, "snr_ratio_shift"))
 	next := clampInt(cur+delta, 0, 7)
 	return m.postValueCmd("/api/detector/snr-ratio-shift", "snr", next)
-}
-
-func (m model) postGainCmd(gain string) tea.Cmd {
-	client := m.client
-	baseURL := m.baseURL
-	return func() tea.Msg {
-		body, _ := json.Marshal(map[string]string{"gain_db": gain})
-		req, err := http.NewRequest(http.MethodPost, baseURL+"/api/radio/gain", bytes.NewReader(body))
-		if err != nil {
-			return controlResult{Kind: "gain", Err: err}
-		}
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := client.Do(req)
-		if err != nil {
-			return controlResult{Kind: "gain", Err: err}
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return controlResult{Kind: "gain", Err: fmt.Errorf("status %d", resp.StatusCode)}
-		}
-		return controlResult{Kind: "gain", Value: gain + " dB"}
-	}
 }
 
 func (m model) postValueCmd(path, kind string, value int) tea.Cmd {
@@ -476,20 +422,20 @@ func deriveSample(cur, prev *statsData, elapsed float64, now time.Time) sample {
 	msgRate := deltaRate(cur.MsgCount, prev.MsgCount, elapsed, cur.MsgRate)
 	dropRate := deltaRate(cur.DropCount, prev.DropCount, elapsed, 0)
 	return sample{
-		At:            now,
-		MsgRate:       msgRate,
-		ValidRate:     validRate,
-		DropRate:      dropRate,
-		InvalidDFRate: invalidRate,
-		ValidRatio:    safeRatio(validRate, invalidRate),
+		At:              now,
+		MsgRate:         msgRate,
+		ValidRate:       validRate,
+		DropRate:        dropRate,
+		InvalidDFRate:   invalidRate,
+		ValidRatio:      safeRatio(validRate, invalidRate),
 		CrcPreDetRatio:  safeRatio(validRate, preDetRate),
 		CrcPrePassRatio: safeRatio(validRate, prePassRate),
 		DropMsgRatio:    safeRatio(dropRate, msgRate),
-		Aircraft:      float64(cur.Aircraft),
-		IQ75Rate:      deltaRate(debugValue(cur, "raw_iq_75pct_ct"), debugValue(prev, "raw_iq_75pct_ct"), elapsed, 0),
-		IQ87Rate:      deltaRate(debugValue(cur, "raw_iq_87p5pct_ct"), debugValue(prev, "raw_iq_87p5pct_ct"), elapsed, 0),
-		NearrailRate:  deltaRate(debugValue(cur, "raw_iq_nearrail_ct"), debugValue(prev, "raw_iq_nearrail_ct"), elapsed, 0),
-		PwrSatRate:    deltaRate(debugValue(cur, "raw_power_sat_ct"), debugValue(prev, "raw_power_sat_ct"), elapsed, 0),
+		Aircraft:        float64(cur.Aircraft),
+		IQ75Rate:        deltaRate(debugValue(cur, "raw_iq_75pct_ct"), debugValue(prev, "raw_iq_75pct_ct"), elapsed, 0),
+		IQ87Rate:        deltaRate(debugValue(cur, "raw_iq_87p5pct_ct"), debugValue(prev, "raw_iq_87p5pct_ct"), elapsed, 0),
+		NearrailRate:    deltaRate(debugValue(cur, "raw_iq_nearrail_ct"), debugValue(prev, "raw_iq_nearrail_ct"), elapsed, 0),
+		PwrSatRate:      deltaRate(debugValue(cur, "raw_power_sat_ct"), debugValue(prev, "raw_power_sat_ct"), elapsed, 0),
 	}
 }
 
@@ -555,11 +501,6 @@ func formatRatio(v float64) string {
 		return "0.00:1"
 	}
 	return fmt.Sprintf("%.2f:1", v)
-}
-
-func parseGainDB(s string) (float64, error) {
-	s = strings.TrimSpace(strings.TrimSuffix(s, "dB"))
-	return strconv.ParseFloat(strings.TrimSpace(s), 64)
 }
 
 func minMax(vals []float64) (float64, float64) {

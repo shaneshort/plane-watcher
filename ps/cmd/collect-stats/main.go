@@ -48,7 +48,7 @@ var fields = []string{
 }
 
 func main() {
-	baseURL := flag.String("base-url", "http://pluto.local:8080", "plane-feeder base URL")
+	baseURL := flag.String("base-url", "http://planewatcher.local:8080", "plane-feeder base URL")
 	interval := flag.Duration("interval", 30*time.Second, "sample interval")
 	count := flag.Int("count", 0, "number of samples to collect (0 = run forever)")
 	outPath := flag.String("out", "", "CSV output path (default stdout)")
@@ -130,9 +130,6 @@ func csvHeader() string {
 		"client_count",
 		"pps_count",
 		"overflow",
-		"gain_mode",
-		"gain_db",
-		"rssi",
 	}
 	cols = append(cols, fields...)
 	for _, k := range fields {
@@ -153,9 +150,6 @@ func csvRow(now time.Time, s web.StatsData, prev *web.StatsData) string {
 		strconv.Itoa(s.ClientCount),
 		strconv.FormatUint(uint64(s.PPSCount), 10),
 		strconv.FormatBool(s.Overflow),
-		s.Radio.GainMode,
-		s.Radio.GainDB,
-		s.Radio.RSSI,
 	}
 	for _, k := range fields {
 		switch k {
