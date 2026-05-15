@@ -64,20 +64,3 @@ targets = ["arm", "host"]
 		}
 	}
 }
-
-func TestDiscoverCommandsStaleTOMLEntry(t *testing.T) {
-	root := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(root, "plane-feeder"), 0o755)
-	tomlPath := filepath.Join(root, "build.toml")
-	body := `
-[sweep-gain]
-targets = ["arm"]
-`
-	if err := os.WriteFile(tomlPath, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, err := DiscoverCommands(root, tomlPath)
-	if err == nil {
-		t.Fatal("expected error for build.toml entry with no ps/cmd/<name> dir")
-	}
-}

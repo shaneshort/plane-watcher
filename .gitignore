@@ -35,7 +35,7 @@ contrib/
 visualizations/
 
 # Go build artifacts
-bin/
+/bin/
 ps/bin/
 ps/bin-arm/
 ps/regdump
@@ -70,15 +70,22 @@ linux-dts/*.dtb
 TODO.md
 
 # Build artifacts
-build/
+/build/
 # The orchestration package happens to be named "build" — re-include it.
 !ps/internal/build/
 boot/uramdisk.image.gz.dist
 debug-boot.log
-.serena
+.serena/
 ops/
 .claude/
-docs/plans
+
+# Local planning notes. Historical tracked plans remain visible to git.
+docs/plans/2026-04-10-ubx-gpsd-tool-design.md
+docs/plans/2026-04-12-gps-dashboard-design.md
+docs/plans/2026-04-12-preamble-relaxing-experiment-plan.md
+docs/plans/2026-04-13-web-product-ui-plan.md
+docs/plans/2026-04-16-smart-zynq-sl-port-plan.md
+docs/plans/2026-05-14-builder-tui-design.md
 
 # builder runtime state
 tools/builder.local.toml
