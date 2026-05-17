@@ -1,0 +1,26 @@
+Time-Mode Configuration
+═══════════════════════
+  Receiver        M8  (CFG-TMODE2, 28 bytes)
+  Current mode    disabled  (timeMode=0)
+  Flags           0x0000
+
+Fixed-mode position  (not used in this mode)
+────────────────────────────────────────────
+╭───────────────────┬─────────┬────────╮
+│ X                 │  0.00 m │ (0 cm) │
+│ Y                 │  0.00 m │ (0 cm) │
+│ Z                 │  0.00 m │ (0 cm) │
+│ Position accuracy │ 0.000 m │ (0 mm) │
+╰───────────────────┴─────────┴────────╯
+
+Survey-in thresholds  (not used in this mode)
+─────────────────────────────────────────────
+╭──────────────────┬─────────┬────────╮
+│ Minimum duration │ 0 s     │        │
+│ Accuracy limit   │ 0.000 m │ (0 mm) │
+╰──────────────────┴─────────┴────────╯
+
+Raw
+───
+  Payload           00000000000000000000000000000000000000000000000000000000
+  Restore command   ubx tmode set 00000000000000000000000000000000000000000000000000000000

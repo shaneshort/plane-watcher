@@ -1,0 +1,60 @@
+Receiver Status
+═══════════════
+
+Receiver
+────────
+╭────────────┬────────────────────────╮
+│ Generation │ M8                     │
+│ Software   │ EXT CORE 3.01 (111141) │
+│ Hardware   │ 00080000               │
+│ Time mode  │ fixed  (timeMode=2)    │
+│ Extensions │ ROM BASE 2.01 (75331)  │
+│            │ FWVER=TIM 1.10         │
+│            │ GPS;GLO;GAL;BDS        │
+╰────────────┴────────────────────────╯
+
+Navigation Engine  (CFG-NAV5)
+─────────────────────────────
+╭───────────────┬─────────────────╮
+│ Dynamic model │ stationary  (2) │
+│ Fix mode      │ 3               │
+│ Min elevation │ 5°              │
+│ UTC standard  │ 3               │
+╰───────────────┴─────────────────╯
+
+Timing  (NAV-CLOCK)
+───────────────────
+╭────────────────────┬─────────────╮
+│ Time accuracy      │ 8 ns        │
+│ Frequency accuracy │ 12,500 ps/s │
+│ Clock bias         │ -3.422 µs   │
+│ Clock drift        │ -12 ns/s    │
+╰────────────────────┴─────────────╯
+
+Time Pulse  (CFG-TP5, tpIdx=0)
+──────────────────────────────
+╭────────────────┬──────────────────────────────╮
+│ Active         │ yes                          │
+│ Locked to GNSS │ yes                          │
+│ Frequency      │ 1 Hz                         │
+│ Pulse length   │ 500,000 µs                   │
+│ Align to TOW   │ yes                          │
+│ Polarity       │ rising edge at top of second │
+│ Grid           │ UTC                          │
+╰────────────────┴──────────────────────────────╯
+
+Satellites  (gpsd SKY)
+──────────────────────
+╭─────────────┬───────────────╮
+│ Used in fix │ 20 of 23 seen │
+│ HDOP        │ 0.56          │
+│ VDOP        │ 0.84          │
+│ PDOP        │ 1.01          │
+╰─────────────┴───────────────╯
+╭─────┬─────────┬──────┬─────┬───────────┬──────╮
+│ PRN │ GNSS    │ Az   │ El  │ SNR dB-Hz │ Used │
+├─────┼─────────┼──────┼─────┼───────────┼──────┤
+│  85 │ GLONASS │  31° │ 56° │        50 │ ✓    │
+│  24 │ GPS     │  20° │ 71° │        47 │ ✓    │
+│  13 │ GPS     │ 194° │ 59° │        46 │ ·    │
+╰─────┴─────────┴──────┴─────┴───────────┴──────╯

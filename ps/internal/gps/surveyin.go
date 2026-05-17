@@ -89,10 +89,9 @@ func SurveyIn(
 		return SurveyInResult{}, fmt.Errorf("read-before-write: %w", err)
 	}
 	result.CachedTMODE = cached
-	debugf(debugOut, "[ubx] cached pre-run TMODE%d payload (%d bytes):",
-		tmodeNumberFor(gen), len(cached.Raw))
-	debugf(debugOut, "[ubx]   %s", hex.EncodeToString(cached.Raw))
-	debugf(debugOut, "[ubx]   to restore manually: ubx tmode set %s", hex.EncodeToString(cached.Raw))
+	// Cached payload is returned via result.CachedTMODE so the CLI can
+	// surface the recovery hex only on failure paths. Avoiding the
+	// preamble in the success path keeps the interactive output clean.
 
 	// 2. Build & install rollback. Initially ARMED — failure paths run
 	// it. The success path disarms it (unless --ephemeral).
@@ -307,10 +306,15 @@ func WriteTMODE(ctx context.Context, dc *DeviceClient, gen Generation, frame Fra
 	if gen == GenM8 {
 		pollID = IDCfgTMODE2
 	}
+	// Verify against the mode-relevant subset of fields. The u-blox M8
+	// firmware retains the prior-mode field values when switching mode
+	// via CFG-TMODE2 (e.g. ECEF/fixedPosAcc survive a switch into
+	// Survey-in mode where those fields are unused). A strict byte-equal
+	// verify would reject a correctly-applied mode-switch write.
 	verify := func(got []byte) error {
-		if !bytesEqual(got, expectedPayload) {
-			return fmt.Errorf("receiver TMODE = %s, expected %s",
-				hex.EncodeToString(got), hex.EncodeToString(expectedPayload))
+		if err := compareTMODEByMode(gen, got, expectedPayload); err != nil {
+			return fmt.Errorf("receiver TMODE = %s, expected %s: %w",
+				hex.EncodeToString(got), hex.EncodeToString(expectedPayload), err)
 		}
 		return nil
 	}

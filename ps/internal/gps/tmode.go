@@ -2,6 +2,7 @@ package gps
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"math"
 )
@@ -410,4 +411,114 @@ func ParseSVIN(g Generation, payload []byte) (SVINStatus, error) {
 	return SVINStatus{}, fmt.Errorf("ubx: cannot parse SVIN for generation %s", g)
 }
 
+// compareTMODEByMode compares two CFG-TMODE2 (M8) or CFG-TMODE3 (F9)
+// payloads, restricting the comparison to the fields the receiver firmware
+// actually applies for the active timeMode. Bytes that the firmware ignores
+// in the current mode (e.g. ECEF coordinates and fixedPosAcc in Survey-in
+// mode, svinMinDur and svinAccLimit in Fixed mode) are skipped — the M8
+// retains the prior-mode values in those slots, so insisting on full
+// byte-equality would reject correctly-applied mode-switch writes.
+//
+// `expected` defines the intended state; the comparator extracts the
+// expected timeMode from it and rejects any reply whose timeMode does not
+// match. Beyond the timeMode check, only the mode-relevant field set is
+// byte-compared. See `tmode.go` payload comments for the field layouts.
+func compareTMODEByMode(gen Generation, got, expected []byte) error {
+	expectedMode := TMODEMode(gen, expected)
+	if expectedMode < 0 {
+		return fmt.Errorf("malformed expected payload (length %d)", len(expected))
+	}
+	gotMode := TMODEMode(gen, got)
+	if gotMode < 0 {
+		return fmt.Errorf("malformed receiver payload (length %d)", len(got))
+	}
+	if gotMode != expectedMode {
+		return fmt.Errorf("timeMode = %d, expected %d", gotMode, expectedMode)
+	}
+	switch gen {
+	case GenM8:
+		if len(got) != 28 || len(expected) != 28 {
+			return fmt.Errorf("TMODE2 payload must be 28 bytes (got %d, expected %d)",
+				len(got), len(expected))
+		}
+		return compareTMODE2ByMode(expectedMode, got, expected)
+	case GenF9:
+		if len(got) != 40 || len(expected) != 40 {
+			return fmt.Errorf("TMODE3 payload must be 40 bytes (got %d, expected %d)",
+				len(got), len(expected))
+		}
+		return compareTMODE3ByMode(expectedMode, got, expected)
+	}
+	return fmt.Errorf("ubx: cannot compare TMODE for generation %s", gen)
+}
 
+// compareTMODE2ByMode is the per-mode comparator for M8 CFG-TMODE2.
+//
+//   - Disabled (timeMode=0): only the timeMode byte matters; the rest of
+//     the payload is unused by the firmware.
+//   - Survey-in (timeMode=1): the receiver applies svinMinDur (bytes
+//     20..24) and svinAccLimit (bytes 24..28). ECEF and fixedPosAcc are
+//     ignored — typically retained from a prior Fixed-mode config.
+//   - Fixed (timeMode=2): flags (byte 2 bit0 selects LLA vs ECEF), the
+//     ECEF coordinates (bytes 4..16), and fixedPosAcc (bytes 16..20) are
+//     applied. svinMinDur/svinAccLimit are ignored.
+func compareTMODE2ByMode(mode int, got, expected []byte) error {
+	switch mode {
+	case 0:
+		return nil
+	case 1:
+		if !bytesEqual(got[20:28], expected[20:28]) {
+			return fmt.Errorf("svin fields differ: got %s, expected %s",
+				hex.EncodeToString(got[20:28]), hex.EncodeToString(expected[20:28]))
+		}
+		return nil
+	case 2:
+		// flags (1..4) decide LLA vs ECEF; coords (4..16); fixedPosAcc (16..20).
+		if !bytesEqual(got[1:20], expected[1:20]) {
+			return fmt.Errorf("fixed-mode fields differ: got %s, expected %s",
+				hex.EncodeToString(got[1:20]), hex.EncodeToString(expected[1:20]))
+		}
+		return nil
+	}
+	return fmt.Errorf("unsupported timeMode %d", mode)
+}
+
+// compareTMODE3ByMode is the per-mode comparator for F9 CFG-TMODE3.
+// Same semantics as the M8 variant; the field offsets differ because
+// TMODE3 carries a version byte at offset 0, the mode in a 2-byte flags
+// field at offset 2, sub-cm high-precision ECEF parts at bytes 16..19,
+// and svin fields at bytes 24..32.
+func compareTMODE3ByMode(mode int, got, expected []byte) error {
+	switch mode {
+	case 0:
+		return nil
+	case 1:
+		// svinMinDur (24..28), svinAccLimit (28..32).
+		if !bytesEqual(got[24:32], expected[24:32]) {
+			return fmt.Errorf("svin fields differ: got %s, expected %s",
+				hex.EncodeToString(got[24:32]), hex.EncodeToString(expected[24:32]))
+		}
+		return nil
+	case 2:
+		// flags high byte (byte 3) carries the lla bit — required for
+		// the receiver to interpret bytes 4..16 as ECEF vs LLH.
+		if got[3] != expected[3] {
+			return fmt.Errorf("flags high byte differs: got %02x, expected %02x",
+				got[3], expected[3])
+		}
+		if !bytesEqual(got[4:16], expected[4:16]) {
+			return fmt.Errorf("ECEF coords differ: got %s, expected %s",
+				hex.EncodeToString(got[4:16]), hex.EncodeToString(expected[4:16]))
+		}
+		if !bytesEqual(got[16:19], expected[16:19]) {
+			return fmt.Errorf("ECEF HP parts differ: got %s, expected %s",
+				hex.EncodeToString(got[16:19]), hex.EncodeToString(expected[16:19]))
+		}
+		if !bytesEqual(got[20:24], expected[20:24]) {
+			return fmt.Errorf("fixedPosAcc differs: got %s, expected %s",
+				hex.EncodeToString(got[20:24]), hex.EncodeToString(expected[20:24]))
+		}
+		return nil
+	}
+	return fmt.Errorf("unsupported timeMode %d", mode)
+}

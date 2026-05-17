@@ -152,7 +152,6 @@ func TestParseSVIN_F9(t *testing.T) {
 	}
 }
 
-
 func TestBuildFixedModeTMODE2(t *testing.T) {
 	// Example coords (1 cm ECEF): arbitrary
 	pl := BuildFixedModeTMODE2(-237026900, 487138600, -335500900, 2000)
@@ -316,5 +315,113 @@ func TestPollFrames(t *testing.T) {
 	sf9, _ := SVINPollFrame(GenF9)
 	if sf9.Class != ClassNAV || sf9.ID != IDNavSVIN {
 		t.Errorf("F9 SVIN poll wrong: %+v", sf9)
+	}
+}
+
+// TestCompareTMODEByMode_M8SurveyInIgnoresStaleECEF is the regression test
+// for the bug where switching an M8 receiver from Fixed mode to Survey-in
+// mode causes WriteTMODE's verify step to fail. The u-blox firmware retains
+// the prior Fixed-mode ECEF and fixedPosAcc field values when switching to
+// Survey-in mode because those fields are unused in Survey-in mode. The
+// mode-aware comparator must accept this state as a successful write.
+//
+// Real-world data captured from the receiver under test:
+//
+//	expected = 01000000 00000000 00000000 00000000 00000000 2c010000 d0070000
+//	got      = 01000000 4441dff1 8525091d 50a900ec 8d040000 2c010000 d0070000
+func TestCompareTMODEByMode_M8SurveyInIgnoresStaleECEF(t *testing.T) {
+	expected := BuildSurveyInTMODE2(300, 2000)
+	got := append([]byte(nil), expected...)
+	// Stale Fixed-mode coordinates retained by the firmware.
+	binary.LittleEndian.PutUint32(got[4:8], 0xf1df4144)   // ecefX
+	binary.LittleEndian.PutUint32(got[8:12], 0x1d092585)  // ecefY
+	binary.LittleEndian.PutUint32(got[12:16], 0xec00a950) // ecefZ
+	binary.LittleEndian.PutUint32(got[16:20], 0x048d)     // fixedPosAcc
+	if err := compareTMODEByMode(GenM8, got, expected); err != nil {
+		t.Errorf("survey-in compare must ignore stale ECEF/fixedPosAcc: %v", err)
+	}
+}
+
+func TestCompareTMODEByMode_M8FixedIgnoresStaleSvinFields(t *testing.T) {
+	expected := BuildFixedModeTMODE2(100, 200, 300, 10)
+	got := append([]byte(nil), expected...)
+	binary.LittleEndian.PutUint32(got[20:24], 9999) // stale svinMinDur
+	binary.LittleEndian.PutUint32(got[24:28], 8888) // stale svinAccLimit
+	if err := compareTMODEByMode(GenM8, got, expected); err != nil {
+		t.Errorf("fixed-mode compare must ignore stale svin fields: %v", err)
+	}
+}
+
+func TestCompareTMODEByMode_M8DetectsModeMismatch(t *testing.T) {
+	expected := BuildSurveyInTMODE2(300, 2000)
+	got := append([]byte(nil), expected...)
+	got[0] = 0x02 // receiver still in Fixed mode
+	if err := compareTMODEByMode(GenM8, got, expected); err == nil {
+		t.Error("compare must reject a mode mismatch")
+	}
+}
+
+func TestCompareTMODEByMode_M8DetectsDifferentSvinDuration(t *testing.T) {
+	expected := BuildSurveyInTMODE2(300, 2000)
+	got := append([]byte(nil), expected...)
+	binary.LittleEndian.PutUint32(got[20:24], 999) // wrong duration
+	if err := compareTMODEByMode(GenM8, got, expected); err == nil {
+		t.Error("compare must reject a different svinMinDur in survey-in mode")
+	}
+}
+
+func TestCompareTMODEByMode_M8DetectsDifferentECEF(t *testing.T) {
+	expected := BuildFixedModeTMODE2(100, 200, 300, 10)
+	got := append([]byte(nil), expected...)
+	binary.LittleEndian.PutUint32(got[4:8], 999) // wrong ecefX
+	if err := compareTMODEByMode(GenM8, got, expected); err == nil {
+		t.Error("compare must reject a different ecefX in fixed mode")
+	}
+}
+
+// F9 TMODE3 mirror of the M8 test: switching an F9 receiver from Fixed to
+// Survey-in mode leaves stale ECEF/HP/fixedPosAcc bytes in place. Verify
+// must accept this state.
+func TestCompareTMODEByMode_F9SurveyInIgnoresStaleECEF(t *testing.T) {
+	expected := BuildSurveyInTMODE3(300, 20000)
+	got := append([]byte(nil), expected...)
+	binary.LittleEndian.PutUint32(got[4:8], 0xf1df4144)
+	binary.LittleEndian.PutUint32(got[8:12], 0x1d092585)
+	binary.LittleEndian.PutUint32(got[12:16], 0xec00a950)
+	got[16] = 5                                       // ecefXHP
+	got[17] = 6                                       // ecefYHP
+	got[18] = 7                                       // ecefZHP
+	binary.LittleEndian.PutUint32(got[20:24], 0x048d) // fixedPosAcc
+	if err := compareTMODEByMode(GenF9, got, expected); err != nil {
+		t.Errorf("F9 survey-in compare must ignore stale ECEF/HP/fixedPosAcc: %v", err)
+	}
+}
+
+func TestCompareTMODEByMode_F9FixedIgnoresStaleSvinFields(t *testing.T) {
+	expected := BuildFixedModeTMODE3(100, 200, 300, 1, 2, 3, 10)
+	got := append([]byte(nil), expected...)
+	binary.LittleEndian.PutUint32(got[24:28], 9999) // stale svinMinDur
+	binary.LittleEndian.PutUint32(got[28:32], 8888) // stale svinAccLimit
+	if err := compareTMODEByMode(GenF9, got, expected); err != nil {
+		t.Errorf("F9 fixed compare must ignore stale svin fields: %v", err)
+	}
+}
+
+func TestCompareTMODEByMode_F9DetectsDifferentSvinDuration(t *testing.T) {
+	expected := BuildSurveyInTMODE3(300, 20000)
+	got := append([]byte(nil), expected...)
+	binary.LittleEndian.PutUint32(got[24:28], 999)
+	if err := compareTMODEByMode(GenF9, got, expected); err == nil {
+		t.Error("compare must reject a different svinMinDur in survey-in mode")
+	}
+}
+
+func TestCompareTMODEByMode_RejectsMalformedLengths(t *testing.T) {
+	expected := BuildSurveyInTMODE2(300, 2000)
+	if err := compareTMODEByMode(GenM8, expected[:20], expected); err == nil {
+		t.Error("compare must reject a truncated receiver payload")
+	}
+	if err := compareTMODEByMode(GenM8, expected, expected[:20]); err == nil {
+		t.Error("compare must reject a truncated expected payload")
 	}
 }

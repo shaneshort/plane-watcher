@@ -2,8 +2,9 @@ package gps
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
+	"time"
 )
 
 // StatusReport is a one-shot snapshot of everything the `ubx status`
@@ -27,6 +28,17 @@ type StatusReport struct {
 	TP5Raw []byte
 	TP5    TP5Summary
 	TP5Err error
+
+	// Receiver self-assessed clock quality (UBX-NAV-CLOCK). Reports
+	// time-of-pulse accuracy, frequency stability, and current clock
+	// bias/drift — the key timing-receiver health metrics.
+	Clock    ClockStatus
+	ClockErr error
+
+	// Satellite reception snapshot — sourced from the most recent gpsd
+	// SKY message. Populated by GatherStatus's wait loop.
+	SKY    *SKY
+	SKYErr error
 }
 
 // GatherStatus polls every CFG/MON message used by the `ubx status`
@@ -94,91 +106,42 @@ func GatherStatus(ctx context.Context, dc *DeviceClient) (StatusReport, error) {
 		rpt.TP5, rpt.TP5Err = ParseTP5(tp5Raw)
 	}
 
+	// 6. NAV-CLOCK — receiver-side timing health (tAcc, fAcc, bias, drift).
+	rpt.Clock, rpt.ClockErr = PollNavClock(ctx, dc)
+
+	// 7. Satellite reception (gpsd SKY). gpsd emits SKY messages
+	// asynchronously — there's no poll to request one. The client
+	// caches the most recent. Wait briefly so a freshly-opened session
+	// has time for the first SKY to arrive.
+	rpt.SKY = waitForSKY(ctx, dc, 5*time.Second)
+	if rpt.SKY == nil {
+		rpt.SKYErr = errors.New("no SKY message received within 5s (gpsd may not be reporting satellites)")
+	}
+
 	return rpt, nil
 }
 
-// Format renders the StatusReport as a human-readable multiline string.
-func (r StatusReport) Format() string {
-	var b strings.Builder
-
-	fmt.Fprintf(&b, "Receiver\n")
-	if r.MonVerErr != nil {
-		fmt.Fprintf(&b, "  ERROR: %v\n", r.MonVerErr)
-	} else {
-		fmt.Fprintf(&b, "  generation: %s\n", r.Generation)
-		fmt.Fprintf(&b, "  sw:         %s\n", r.MonVer.SwVersion)
-		fmt.Fprintf(&b, "  hw:         %s\n", r.MonVer.HwVersion)
-		for _, e := range r.MonVer.Extensions {
-			fmt.Fprintf(&b, "  ext:        %s\n", e)
+// waitForSKY polls dc.LatestSKY at 100 ms intervals until a non-nil SKY
+// arrives or the timeout / context expires. Returns whatever SKY is
+// most recently cached on the device, or nil if none arrived in time.
+func waitForSKY(ctx context.Context, dc *DeviceClient, timeout time.Duration) *SKY {
+	if sky := dc.LatestSKY(); sky != nil {
+		return sky
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return dc.LatestSKY()
+		case <-deadline.C:
+			return dc.LatestSKY()
+		case <-tick.C:
+			if sky := dc.LatestSKY(); sky != nil {
+				return sky
+			}
 		}
 	}
-
-	fmt.Fprintf(&b, "\nTime Mode\n")
-	if r.TMODEErr != nil {
-		fmt.Fprintf(&b, "  ERROR: %v\n", r.TMODEErr)
-	} else {
-		modeName := "unknown"
-		switch r.TMODEMode {
-		case 0:
-			modeName = "disabled"
-		case 1:
-			modeName = "survey-in"
-		case 2:
-			modeName = "fixed"
-		}
-		fmt.Fprintf(&b, "  mode:       %s (%d)\n", modeName, r.TMODEMode)
-	}
-
-	fmt.Fprintf(&b, "\nSurvey-In\n")
-	if r.SVINErr != nil {
-		fmt.Fprintf(&b, "  ERROR: %v\n", r.SVINErr)
-	} else {
-		fmt.Fprintf(&b, "  active:     %t\n", r.SVIN.Active)
-		fmt.Fprintf(&b, "  valid:      %t\n", r.SVIN.Valid)
-		fmt.Fprintf(&b, "  duration:   %d s\n", r.SVIN.DurationSec)
-		fmt.Fprintf(&b, "  obs:        %d\n", r.SVIN.Observations)
-		fmt.Fprintf(&b, "  meanAcc:    %.3f m\n", r.SVIN.MeanAccMeters)
-		fmt.Fprintf(&b, "  meanECEF:   (%d, %d, %d) cm\n", r.SVIN.MeanXCm, r.SVIN.MeanYCm, r.SVIN.MeanZCm)
-	}
-
-	fmt.Fprintf(&b, "\nNavigation Engine (CFG-NAV5)\n")
-	if r.NAV5Err != nil {
-		fmt.Fprintf(&b, "  ERROR: %v\n", r.NAV5Err)
-	} else {
-		fmt.Fprintf(&b, "  dynModel:   %s (%d)\n", DynModelName(r.NAV5.DynModel), r.NAV5.DynModel)
-		fmt.Fprintf(&b, "  fixMode:    %d\n", r.NAV5.FixMode)
-		fmt.Fprintf(&b, "  minElev:    %d deg\n", r.NAV5.MinElev)
-		fmt.Fprintf(&b, "  utcStd:     %d\n", r.NAV5.UtcStandard)
-	}
-
-	fmt.Fprintf(&b, "\nTime Pulse (CFG-TP5, tpIdx=0)\n")
-	if r.TP5Err != nil {
-		fmt.Fprintf(&b, "  ERROR: %v\n", r.TP5Err)
-	} else {
-		fmt.Fprintf(&b, "  active:     %t\n", r.TP5.Active)
-		fmt.Fprintf(&b, "  lockGNSS:   %t\n", r.TP5.LockGpsFreq)
-		freqUnit := "(period, us)"
-		if r.TP5.IsFreq {
-			freqUnit = "(freq, Hz)"
-		}
-		fmt.Fprintf(&b, "  freq:       %d %s\n", r.TP5.FreqPeriod, freqUnit)
-		pulseUnit := "(duty, 2^-32)"
-		if r.TP5.IsLength {
-			pulseUnit = "(length, us)"
-		}
-		fmt.Fprintf(&b, "  pulseLen:   %d %s\n", r.TP5.PulseLenRatio, pulseUnit)
-		fmt.Fprintf(&b, "  alignToTow: %t\n", r.TP5.AlignToTow)
-		edge := "falling@top"
-		if r.TP5.RisingAtTop {
-			edge = "rising@top"
-		}
-		fmt.Fprintf(&b, "  polarity:   %s\n", edge)
-		grid := "GPS"
-		if r.TP5.GridUTC {
-			grid = "UTC"
-		}
-		fmt.Fprintf(&b, "  grid:       %s\n", grid)
-	}
-
-	return b.String()
 }

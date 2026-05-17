@@ -1,0 +1,61 @@
+Receiver Status
+═══════════════
+
+Receiver
+────────
+╭────────────┬─────────────────────────╮
+│ Generation │ M8                      │
+│ Software   │ EXT CORE 3.01 (111141)  │
+│ Hardware   │ 00080000                │
+│ Time mode  │ survey-in  (timeMode=1) │
+╰────────────┴─────────────────────────╯
+
+Survey-In
+─────────
+╭───────────────┬──────────────────────────────────────────────╮
+│ Status        │ active                                       │
+│ Duration      │ 120 s                                        │
+│ Observations  │ 121                                          │
+│ Mean accuracy │ 1.350 m                                      │
+│ Mean ECEF     │ (-237,027,004, 487,138,693, -335,500,976) cm │
+╰───────────────┴──────────────────────────────────────────────╯
+
+Navigation Engine  (CFG-NAV5)
+─────────────────────────────
+╭───────────────┬─────────────────╮
+│ Dynamic model │ stationary  (2) │
+│ Fix mode      │ 3               │
+│ Min elevation │ 5°              │
+│ UTC standard  │ 3               │
+╰───────────────┴─────────────────╯
+
+Timing  (NAV-CLOCK)
+───────────────────
+╭────────────────────┬────────╮
+│ Time accuracy      │ 24 ns  │
+│ Frequency accuracy │ 0 ps/s │
+│ Clock bias         │ 0 ns   │
+│ Clock drift        │ 0 ns/s │
+╰────────────────────┴────────╯
+
+Time Pulse  (CFG-TP5, tpIdx=0)
+──────────────────────────────
+╭────────────────┬───────────────────────────────╮
+│ Active         │ yes                           │
+│ Locked to GNSS │ no                            │
+│ Frequency      │ 1 Hz                          │
+│ Pulse ratio    │ 0 × 2⁻³² duty                 │
+│ Align to TOW   │ no                            │
+│ Polarity       │ falling edge at top of second │
+│ Grid           │ GPS                           │
+╰────────────────┴───────────────────────────────╯
+
+Satellites  (gpsd SKY)
+──────────────────────
+╭─────────────┬───────────────╮
+│ Used in fix │ 14 of 18 seen │
+│ HDOP        │ 0.71          │
+│ VDOP        │ 1.00          │
+│ PDOP        │ 1.20          │
+╰─────────────┴───────────────╯
+  (no satellite detail in the SKY report)
