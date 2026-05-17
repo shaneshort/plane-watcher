@@ -150,7 +150,7 @@ The only hand-authored XDC files used by this path are:
 - [constr/smartzynq_phase1_io.xdc](/home/shanes/plane_watcher/hdl/vivado/constr/smartzynq_phase1_io.xdc)
   for UART, GPS PPS, and Ethernet pin/timing constraints
 - [constr/smartzynq_adc_io.xdc](/home/shanes/plane_watcher/hdl/vivado/constr/smartzynq_adc_io.xdc)
-  for the AD9238 log-detector frontend pins
+  for the AD9203 prototype log-detector frontend pins
 
 Generated IP and block-design XDC files under `build/` are owned by Vivado and
 are not tracked as source constraints.

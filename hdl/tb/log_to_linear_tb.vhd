@@ -7,7 +7,7 @@
 --   - Monotonic output (placeholder table is monotonic; higher code = higher
 --     linear power under the default non-inverting polarity assumption)
 --   - Endpoint values are sane: code 0 maps to a small number (noise floor),
---     code 0xFFF maps to a large number (near full-scale)
+--     full-scale code maps to a large number
 --   - in_valid controls out_valid propagation
 -- =============================================================================
 
@@ -17,15 +17,16 @@ library ieee;
 
 library work;
     use work.adsb_pkg.all;
+    use work.logdet_pkg.all;
 
 entity log_to_linear_tb is
 end entity;
 
 architecture tb of log_to_linear_tb is
-    constant ADC_WIDTH    : positive := 12;
+    constant ADC_WIDTH    : positive := LOGDET_ADC_WIDTH;
     constant OUTPUT_WIDTH : positive := INPUT_POWER_WIDTH;
-    -- 65 MSPS encode clock; matches the intended operating rate.
-    constant CLK_PERIOD   : time := 15.4 ns;
+    -- AD9203 target rate is 40 MSPS.
+    constant CLK_PERIOD   : time := 25 ns;
 
     signal clock : std_logic := '0';
     signal reset : std_logic := '1';
@@ -78,7 +79,7 @@ begin
 
         -- Test 1: single-cycle latency.
         report "Test 1: LUT latency";
-        in_code  <= to_unsigned(16#800#, ADC_WIDTH);
+        in_code  <= to_unsigned(512, ADC_WIDTH);
         in_valid <= '1';
         wait_clocks(1);
         -- After one rising edge, out_valid should be high.
@@ -92,7 +93,7 @@ begin
             severity failure;
         report "Test 1: PASSED";
 
-        -- Test 2: Endpoint values — code 0 gives lowest output, code 0xFFF
+        -- Test 2: Endpoint values — code 0 gives lowest output, full-scale
         -- gives highest (placeholder table is monotonically increasing).
         report "Test 2: endpoint values";
         in_code  <= (others => '0');
@@ -106,7 +107,7 @@ begin
         wait_clocks(1);
         wait_clocks(1);
         high_power := out_power;
-        report "LUT[0xFFF] = " & integer'image(to_integer(high_power));
+        report "LUT[full-scale] = " & integer'image(to_integer(high_power));
 
         assert low_power >= to_signed(0, OUTPUT_WIDTH)
             report "LUT output must be non-negative"
@@ -128,8 +129,8 @@ begin
         prev_power := out_power;
 
         for i in 1 to 15 loop
-            -- Step through 16 points across the 4096-entry table.
-            in_code <= to_unsigned(i * 256, ADC_WIDTH);
+            -- Step through 16 points across the 1024-entry table.
+            in_code <= to_unsigned(i * 64, ADC_WIDTH);
             wait_clocks(1);
             wait_clocks(1);
             cur_power := out_power;
@@ -144,17 +145,16 @@ begin
         report "Test 3: PASSED";
 
         -- Test 4: Mid-range "typical pulse" lands in a useful range.
-        -- REF_DBM is -70 dBm in the placeholder table, placed at the midpoint
-        -- of the MIN_DBM..MAX_DBM span (-90..-30 dBm). That corresponds to
-        -- input code ~0x555 (approx 1/3 of full scale), mapping to ~8000.
-        -- Sanity-check that the midpoint code gives a non-trivial power.
+        -- REF_DBM is -50 dBm in the placeholder table, near ADC code 448,
+        -- mapping to ~8000. Sanity-check that this code gives a non-trivial
+        -- power.
         report "Test 4: midpoint sanity";
-        in_code  <= to_unsigned(16#555#, ADC_WIDTH);
+        in_code  <= to_unsigned(448, ADC_WIDTH);
         in_valid <= '1';
         wait_clocks(1);
         wait_clocks(1);
-        report "LUT[0x555] = " & integer'image(to_integer(out_power));
-        -- Loose bounds — exact value depends on placeholder curve, but it
+        report "LUT[448] = " & integer'image(to_integer(out_power));
+        -- Loose bounds - exact value depends on placeholder curve, but it
         -- must be clearly above the noise floor and below full-scale.
         assert out_power > to_signed(100, OUTPUT_WIDTH)
             report "midpoint output too small - table scaling off"

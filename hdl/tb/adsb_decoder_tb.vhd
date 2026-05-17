@@ -117,6 +117,8 @@ begin
             quiet_score_shift_cfg => to_unsigned(QUIET_SCORE_SHIFT, 3),
             snr_ratio_shift_cfg   => to_unsigned(SNR_RATIO_SHIFT, 3),
             holdoff_cfg           => to_unsigned(PREAMBLE_HOLDOFF_DEFAULT, 12),
+            message_delay_cfg      => to_unsigned(PREAMBLE_MESSAGE_DELAY, 8),
+            output_tap_cfg         => to_unsigned(PREAMBLE_OUTPUT_TAP, 8),
             debug_rpl     => debug_rpl,
             out_messages  => out_messages,
             out_valid     => out_valid,

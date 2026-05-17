@@ -1,10 +1,10 @@
 -- =============================================================================
--- adsb_logdet_bringup.vhd -- AD9238 ingress + log-to-linear LUT + decode chain
+-- adsb_logdet_bringup.vhd -- AD9203 ingress + log-to-linear LUT + decode chain
 -- =============================================================================
 --
 -- Wires the log-detector frontend end-to-end on the Smart ZYNQ SL:
 --
---   AD9238  →  ad9238_ingress  →  log_to_linear  →  async_sample_fifo  →  adsb_pl_wrapper
+--   AD9203  ->  ad9203_ingress  ->  log_to_linear  ->  async_sample_fifo  ->  adsb_pl_wrapper
 --                 (adc_clk,         (1-cycle ROM,    (wr: adc_clk,          (sample_clk = S_AXI_ACLK
 --                  16 MHz)           adc_clk)         rd: S_AXI_ACLK)        = 100 MHz)
 --
@@ -15,8 +15,7 @@
 -- arrivals — and brings timestamp resolution up to 10 ns (vs 62.5 ns if
 -- we clocked the pipeline directly on adc_clk).
 --
--- The encode clock is driven out through an ODDR at adc_clk rate. Channel B
--- on the ingress is tied to '0' since the breakout only wires channel A.
+-- The encode clock is driven out through an ODDR at adc_clk rate.
 --
 -- Two diagnostic taps are kept from earlier bring-up: a 32-bit live sample
 -- word and a free-running sample counter, synchronised to the AXI clock
@@ -43,6 +42,7 @@ library unisim;
 
 library work;
     use work.adsb_pkg.all;
+    use work.logdet_pkg.all;
 
 entity adsb_logdet_bringup is
     port (
@@ -53,7 +53,7 @@ entity adsb_logdet_bringup is
 
         -- External ADC pins (see hdl/vivado/constr/smartzynq_adc_io.xdc).
         adc_encode    : out std_logic;
-        adc_data_a    : in  std_logic_vector(11 downto 0);
+        adc_data_a    : in  std_logic_vector(LOGDET_ADC_WIDTH-1 downto 0);
         adc_otr_a     : in  std_logic;
 
         -- GPS PPS input. Also routed to PS EMIO GPIO in the block design for
@@ -98,18 +98,14 @@ end entity;
 
 architecture rtl of adsb_logdet_bringup is
 
-    -- Tied-off channel B inputs (not wired on the breakout).
-    constant CH_B_DATA_TIEOFF : std_logic_vector(11 downto 0) := (others => '0');
-    constant CH_B_OTR_TIEOFF  : std_logic := '0';
-
     signal adc_reset : std_logic;  -- active high, synchronous to adc_clk
     signal axi_reset : std_logic;  -- active high, synchronous to S_AXI_ACLK
 
     -- ADC capture stage outputs.
-    signal ingress_data_a : unsigned(11 downto 0);
+    signal ingress_data_a : unsigned(LOGDET_ADC_WIDTH-1 downto 0);
     signal ingress_otr_a  : std_logic;
     signal ingress_valid  : std_logic;
-    signal lut_code       : unsigned(11 downto 0);
+    signal lut_code       : unsigned(LOGDET_ADC_WIDTH-1 downto 0);
 
     -- LUT outputs (in the adc_clk domain).
     signal lut_power : signed(INPUT_POWER_WIDTH-1 downto 0);
@@ -129,16 +125,16 @@ architecture rtl of adsb_logdet_bringup is
     signal reset_tog_sync    : std_logic := '0';
     signal reset_tog_prev    : std_logic := '0';
     signal raw_capture_word  : std_logic_vector(31 downto 0) := (others => '0');
-    type raw_capture_t is array (0 to 63) of std_logic_vector(12 downto 0);
+    type raw_capture_t is array (0 to 63) of std_logic_vector(LOGDET_ADC_WIDTH downto 0);
     signal raw_capture_buf : raw_capture_t := (others => (others => '0'));
     signal raw_capture_frozen : std_logic := '0';
     signal raw_capture_index : unsigned(7 downto 0);
-    signal adc_code_min_adc    : unsigned(11 downto 0) := (others => '1');
-    signal adc_code_max_adc    : unsigned(11 downto 0) := (others => '0');
-    signal adc_bit_or_adc      : unsigned(11 downto 0) := (others => '0');
-    signal adc_bit_and_adc     : unsigned(11 downto 0) := (others => '1');
-    signal adc_bit_toggle_adc  : unsigned(11 downto 0) := (others => '0');
-    signal adc_prev_code_adc   : unsigned(11 downto 0) := (others => '0');
+    signal adc_code_min_adc    : unsigned(LOGDET_ADC_WIDTH-1 downto 0) := (others => '1');
+    signal adc_code_max_adc    : unsigned(LOGDET_ADC_WIDTH-1 downto 0) := (others => '0');
+    signal adc_bit_or_adc      : unsigned(LOGDET_ADC_WIDTH-1 downto 0) := (others => '0');
+    signal adc_bit_and_adc     : unsigned(LOGDET_ADC_WIDTH-1 downto 0) := (others => '1');
+    signal adc_bit_toggle_adc  : unsigned(LOGDET_ADC_WIDTH-1 downto 0) := (others => '0');
+    signal adc_prev_code_adc   : unsigned(LOGDET_ADC_WIDTH-1 downto 0) := (others => '0');
     signal adc_otr_count_adc   : unsigned(31 downto 0) := (others => '0');
 
     -- Diagnostic counter and packed sample word in the ADC domain.
@@ -209,38 +205,33 @@ begin
         );
 
     -- -------------------------------------------------------------------------
-    -- Parallel-CMOS latch on channel A. Channel B tied to '0' (not wired).
+    -- Parallel-CMOS latch for the AD9203.
     -- -------------------------------------------------------------------------
-    ingress : entity work.ad9238_ingress
+    ingress : entity work.ad9203_ingress
         generic map (
-            ADC_WIDTH => 12
+            ADC_WIDTH => LOGDET_ADC_WIDTH
         )
         port map (
-            clock      => adc_clk,
-            reset      => adc_reset,
-            adc_data_a => adc_data_a,
-            adc_otr_a  => adc_otr_a,
-            adc_data_b => CH_B_DATA_TIEOFF,
-            adc_otr_b  => CH_B_OTR_TIEOFF,
-            out_data_a => ingress_data_a,
-            out_otr_a  => ingress_otr_a,
-            out_valid  => ingress_valid,
-            out_data_b => open,
-            out_otr_b  => open
+            clock     => adc_clk,
+            reset     => adc_reset,
+            adc_data  => adc_data_a,
+            adc_otr   => adc_otr_a,
+            out_data  => ingress_data_a,
+            out_otr   => ingress_otr_a,
+            out_valid => ingress_valid
         );
 
-    -- Feed raw 12-bit ADC codes into the LUT. The triggered raw capture shows
-    -- the FPGA sees a normal unsigned ADC range centered around 0x800, so do
-    -- not pre-scale here; calibration belongs in log_to_linear.vhd.
+    -- Feed raw 10-bit ADC codes into the LUT. Do not pre-scale here;
+    -- calibration belongs in log_to_linear.vhd after prototype bench capture.
     lut_code <= ingress_data_a;
 
     -- -------------------------------------------------------------------------
-    -- Antilog LUT: AD8318 log-compressed ADC code → linear power scalar.
+    -- Antilog LUT: ADL5513 log-compressed ADC code -> linear power scalar.
     -- One clock cycle of latency; out_valid follows in_valid pipelined.
     -- -------------------------------------------------------------------------
     log_lut : entity work.log_to_linear
         generic map (
-            ADC_WIDTH    => 12,
+            ADC_WIDTH    => LOGDET_ADC_WIDTH,
             OUTPUT_WIDTH => INPUT_POWER_WIDTH
         )
         port map (
@@ -366,7 +357,7 @@ begin
             idx := to_integer(raw_capture_index(5 downto 0));
             raw_capture_word <= (others => '0');
             raw_capture_word(31) <= raw_capture_frozen;
-            raw_capture_word(12 downto 0) <= raw_capture_buf(idx);
+            raw_capture_word(LOGDET_ADC_WIDTH downto 0) <= raw_capture_buf(idx);
         end if;
     end process;
 
@@ -422,9 +413,9 @@ begin
         end if;
     end process;
 
-    live_sample_adc(31 downto 13) <= (others => '0');
-    live_sample_adc(12)           <= ingress_otr_a;
-    live_sample_adc(11 downto 0)  <= std_logic_vector(ingress_data_a);
+    live_sample_adc(31 downto LOGDET_ADC_WIDTH + 1) <= (others => '0');
+    live_sample_adc(LOGDET_ADC_WIDTH)               <= ingress_otr_a;
+    live_sample_adc(LOGDET_ADC_WIDTH-1 downto 0)    <= std_logic_vector(ingress_data_a);
     adc_code_min_word   <= std_logic_vector(resize(adc_code_min_adc, 32));
     adc_code_max_word   <= std_logic_vector(resize(adc_code_max_adc, 32));
     adc_bit_or_word     <= std_logic_vector(resize(adc_bit_or_adc, 32));

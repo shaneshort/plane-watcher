@@ -2,19 +2,21 @@
 -- log_to_linear.vhd -- Antilog lookup table: log-scale ADC code → linear power
 -- =============================================================================
 --
--- Converts the 12-bit output of an AD8313 logarithmic detector frontend
--- digitised by the AD9238 breakout into a 24-bit signed linear power value
+-- Converts the output of the ADL5513 logarithmic detector frontend digitised
+-- by the AD9203 prototype ADC into a 24-bit signed linear power value
 -- compatible with the existing decode pipeline's INPUT_POWER_WIDTH contract.
 --
--- The AD8313 has a positive slope: higher RF power gives higher output
--- voltage, and the confirmed "direct code" ADC format means higher voltage
--- gives higher FPGA ADC code.
+-- The ADL5513 measurement-mode output increases linear-in-dB with RF input
+-- amplitude. The prototype ties the AD9203 for straight-binary output, so
+-- higher detector voltage gives higher FPGA ADC code.
 --
--- Implementation: a 4096-entry × 24-bit ROM inferred as block RAM. One
--- clock cycle of read latency. No DSP48E consumption.
+-- Implementation: a 2**ADC_WIDTH by OUTPUT_WIDTH ROM inferred as block RAM.
+-- One clock cycle of read latency. No DSP48E consumption.
 --
--- The LUT is generated at elaboration from `generate_lut_table` using
--- ADC-code endpoints measured by triggered FPGA capture.
+-- The LUT is generated at elaboration from `generate_lut_table`. The current
+-- table is a first-light placeholder based on the ADL5513's positive
+-- 21 mV/dB nominal transfer; replace the ADC-code anchors with measured
+-- prototype board captures before treating RPL as calibrated.
 -- =============================================================================
 
 library ieee;
@@ -27,7 +29,7 @@ library work;
 
 entity log_to_linear is
     generic (
-        ADC_WIDTH    : positive := 12;
+        ADC_WIDTH    : positive := 10;
         OUTPUT_WIDTH : positive := INPUT_POWER_WIDTH  -- 24
     );
     port (
@@ -49,35 +51,18 @@ architecture rtl of log_to_linear is
     type lut_t is array (0 to LUT_DEPTH - 1) of std_logic_vector(OUTPUT_WIDTH-1 downto 0);
 
     -- ------------------------------------------------------------------------
-    -- LUT generator — AD8313 breakout transfer function → linear power.
+    -- LUT generator — ADL5513 prototype transfer function -> linear power.
     --
-    -- Calibrate directly in ADC-code space. The module's advertised input
-    -- range/front-end scaling makes a bare ADC-voltage model unreliable, and
-    -- the FPGA raw capture is the signal the decoder actually consumes.
+    -- Calibrate directly in ADC-code space. The ADL5513, AD8138, AD9203 input
+    -- span, and FPGA pin capture form the signal the decoder actually
+    -- consumes, so board-level captures should be the source of truth.
     --
-    -- Observations so far:
-    --   * The detector is AD8313, with positive slope: higher RF power gives
-    --     higher output voltage.
-    --   * The ADC output format is direct code, and the FPGA uses D[13:2]
-    --     from the AD9238 breakout as a 12-bit unsigned sample.
-    --   * Triggered raw captures show quiet/event samples around 0x800, with
-    --     stronger samples above that. Scope measurements show quiet around
-    --     ~1.1 V and stronger ADS-B pulses up to ~1.45 V.
-    --
-    -- Measured calibration points at the detector input (1090 MHz CW),
-    -- calibrated in the actual FPGA ADC-code space consumed by the decoder:
-    --   * code ~0x904 ≈ floor (-80 dBm and weaker collapse here)
-    --   * code  0x928 ≈ -60 dBm
-    --   * code  0x96A ≈ -50 dBm
-    --   * code  0x9B9 ≈ -40 dBm
-    --   * code  0xA00 ≈ -30 dBm
-    --   * code  0xA46 ≈ -20 dBm
-    --   * code  0xA57 ≈ -18.5 dBm
-    -- Bench data at -80/-90/-100 dBm all land within a couple of codes of
-    -- ~0x904, so treat that as the practical floor of this analog chain.
-    -- Above -60 dBm the curve rises cleanly, and the strong end only begins
-    -- to bend over near the final -18.5 dBm point. Clamp below the measured
-    -- floor and above the strongest measured point rather than extrapolating.
+    -- Placeholder anchors:
+    --   * ADL5513 datasheet: VOUT rises with input level at nominal 21 mV/dB.
+    --   * AD9203 datasheet: 10-bit straight-binary CMOS output.
+    --   * Until prototype captures exist, spread an 80 dB detector window
+    --     across the useful 10-bit ADC range and clamp at both ends. This
+    --     keeps preamble detection usable for bring-up but is not calibrated.
     --
     -- Output scaling:
     --   * Target: a pulse at REF_DBM maps to REF_OUT counts.
@@ -85,9 +70,9 @@ architecture rtl of log_to_linear is
     --     (saturation). Saturation still produces max output so preamble
     --     detection triggers on very strong bursts.
     --
-    -- Polarity-agnostic math: the clamp logic works whether CODE_AT_HIGH_POWER
-    -- is numerically greater or less than CODE_AT_LOW_POWER. Flipping the
-    -- endpoints flips the LUT polarity without touching any other logic.
+    -- The prototype placeholder assumes positive polarity: higher RF power
+    -- gives a higher ADC code. If measured board data proves otherwise, replace
+    -- this table with measured anchors rather than inverting elsewhere.
     -- ------------------------------------------------------------------------
     function generate_lut_table return lut_t is
         variable table     : lut_t;
@@ -96,16 +81,17 @@ architecture rtl of log_to_linear is
         variable scaled    : real;
         variable clamped   : integer;
 
-        -- Detector calibration anchors in 12-bit FPGA ADC code space.
+        -- Detector calibration anchors in 10-bit FPGA ADC code space.
+        -- Replace these with measured ADL5513 -> AD8138 -> AD9203 captures.
         constant CAL_POINT_COUNT : positive := 6;
         type int_array_t is array (0 to CAL_POINT_COUNT - 1) of integer;
         type real_array_t is array (0 to CAL_POINT_COUNT - 1) of real;
-        constant CODE_FLOOR : integer := 16#904#;
+        constant CODE_FLOOR : integer := 64;
         constant CODE_POINTS : int_array_t := (
-            16#928#, 16#96A#, 16#9B9#, 16#A00#, 16#A46#, 16#A57#
+            192, 320, 448, 576, 704, 832
         );
         constant DBM_POINTS : real_array_t := (
-            -60.0, -50.0, -40.0, -30.0, -20.0, -18.5
+            -70.0, -60.0, -50.0, -40.0, -30.0, -20.0
         );
 
         -- Output scaling.

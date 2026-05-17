@@ -149,6 +149,13 @@ begin
             rx_valid_count     => (others => '0'),
             sample_valid_count => (others => '0'),
             rx_clk_count       => (others => '0'),
+            raw_capture_data   => (others => '0'),
+            adc_code_min       => (others => '0'),
+            adc_code_max       => (others => '0'),
+            adc_bit_or         => (others => '0'),
+            adc_bit_and        => (others => '0'),
+            adc_bit_toggle     => (others => '0'),
+            adc_otr_count      => (others => '0'),
             soft_reset_toggle_out => open,
             irq           => irq,
             S_AXI_ACLK    => clock,     -- Same clock for simulation

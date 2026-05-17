@@ -8,8 +8,8 @@
 #     data; live sample + free-running counter are exposed to the PS through
 #     two AXI GPIO slaves for `devmem` readback.
 #
-# The decode pipeline, log-to-linear LUT, and downsampler are NOT yet wired —
-# this build is only for verifying first-light on the AD9238.
+# This build wires the prototype ADL5513/AD8138/AD9203 log-detector frontend
+# through the decode pipeline for first-light validation.
 #
 # See docs/plans/REWRITE.md for the pin map and design rationale.
 #
@@ -54,7 +54,7 @@ create_project -force $project_name $project_dir -part $part
 add_files -norecurse [list \
     [file join $rtl_dir adsb_pkg.vhd] \
     [file join $rtl_dir logdet_pkg.vhd] \
-    [file join $rtl_dir ad9238_ingress.vhd] \
+    [file join $rtl_dir ad9203_ingress.vhd] \
     [file join $rtl_dir log_to_linear.vhd] \
     [file join $rtl_dir adsb_crc.vhd] \
     [file join $rtl_dir smallest_bsds.vhd] \
@@ -365,11 +365,11 @@ apply_bd_automation -rule xilinx.com:bd_rule:axi4 \
     -config {Master "/ps7_0/M_AXI_GP0" Clk "Auto"} \
     $pl_axi_intf
 
-# External pins. XDC constraints live in constr/smartzynq_adc_io.xdc.
+# External AD9203 pins. XDC constraints live in constr/smartzynq_adc_io.xdc.
 create_bd_port -dir O adc_encode
 connect_bd_net [get_bd_ports adc_encode] [get_bd_pins adsb_logdet_bringup_0/adc_encode]
 
-create_bd_port -dir I -from 11 -to 0 adc_data_a
+create_bd_port -dir I -from 9 -to 0 adc_data_a
 connect_bd_net [get_bd_ports adc_data_a] [get_bd_pins adsb_logdet_bringup_0/adc_data_a]
 
 create_bd_port -dir I adc_otr_a
@@ -422,9 +422,8 @@ make_wrapper -files [get_files "$bd_name.bd"] -top
 add_files -norecurse [glob $project_dir/$project_name.gen/sources_1/bd/$bd_name/hdl/${bd_name}_wrapper.v]
 set_property top ${bd_name}_wrapper [current_fileset]
 
-# Board I/O constraints. UART + ethernet in the phase-1 file; AD9238 pinning
-# (encode, channel A data, OTR) in the adc_io file — see constr/README or
-# docs/plans/REWRITE.md for the wiring map.
+# Board I/O constraints. UART + ethernet in the phase-1 file; AD9203 pinning
+# (clock, data, OTR) in the adc_io file.
 add_files -fileset constrs_1 -norecurse [list \
     [file join $constr_dir smartzynq_phase1_io.xdc] \
     [file join $constr_dir smartzynq_adc_io.xdc] \

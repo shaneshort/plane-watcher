@@ -5,18 +5,26 @@
 # pair). PS UART0 is brought out via EMIO so `ttyPS0` maps to the on-board
 # USB-UART — matching the vendor test firmware's console routing.
 #
-#   L17 = PL_UART_TX  (FPGA → CH340N RX)  ← driven by PS UART0 TXD
-#   M17 = PL_UART_RX  (CH340N TX → FPGA)  ← feeds PS UART0 RXD
+#   PS UART0 / Linux serial0 / console:
+#     L17 = UART_0_txd  (FPGA -> CH340N RX)  driven by PS UART0 TXD
+#     M17 = UART_0_rxd  (CH340N TX -> FPGA)  feeds PS UART0 RXD
 
 set_property -dict {PACKAGE_PIN L17 IOSTANDARD LVCMOS33} [get_ports UART_0_txd]
-set_property -dict {PACKAGE_PIN M17 IOSTANDARD LVCMOS33} [get_ports UART_0_rxd]
+set_property -dict {PACKAGE_PIN M17 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports UART_0_rxd]
 
 # GPS receiver on spare J5 / Bank 35 header pins (3.3 V fixed). UART naming is
 # from the PS perspective: GPS_UART_txd goes to the GPS module RX pin, and
 # GPS_UART_rxd is driven by the GPS module TX pin.
-set_property -dict {PACKAGE_PIN F16 IOSTANDARD LVCMOS33} [get_ports gps_pps]
+#
+#   PPS / Linux pps-gpio / decoder timestamp:
+#     F16 = gps_pps       GPS PPS -> FPGA, fanned to decoder and PS EMIO GPIO[17]
+#
+#   PS UART1 / Linux serial1 / GPS receiver:
+#     E16 = GPS_UART_txd  FPGA -> GPS RX, driven by PS UART1 TXD
+#     D18 = GPS_UART_rxd  GPS TX -> FPGA, feeds PS UART1 RXD
+set_property -dict {PACKAGE_PIN F16 IOSTANDARD LVCMOS33 PULLTYPE PULLDOWN} [get_ports gps_pps]
 set_property -dict {PACKAGE_PIN E16 IOSTANDARD LVCMOS33} [get_ports GPS_UART_txd]
-set_property -dict {PACKAGE_PIN D18 IOSTANDARD LVCMOS33} [get_ports GPS_UART_rxd]
+set_property -dict {PACKAGE_PIN D18 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports GPS_UART_rxd]
 
 # -----------------------------------------------------------------------------
 # Ethernet — PS GEM0 via EMIO → gmii_to_rgmii IP → RTL8211E RGMII PHY.

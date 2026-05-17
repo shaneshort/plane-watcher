@@ -1,74 +1,57 @@
 # Log-Detector Front-End Calibration
 
-This note records the bench calibration used by the current `log_to_linear.vhd`
-LUT for the AD8313 + AD8132 + AD9238 front-end.
+This note tracks the calibration assumptions used by
+`hdl/rtl/log_to_linear.vhd` for the prototype Plane Watcher RF board.
+
+Current hardware chain:
+
+```text
+TQP3M9036 -> TA2003A -> TQP3M9036 -> TA2003A ->
+ADL5513 -> AD8138 -> AD9203 -> FPGA
+```
 
 Related files:
-- [hdl/rtl/log_to_linear.vhd](/home/shanes/plane_watcher/hdl/rtl/log_to_linear.vhd)
-- [docs/generated/ad8313_lut_calibration.svg](/home/shanes/plane_watcher/docs/generated/ad8313_lut_calibration.svg)
 
-## Summary
+- [log_to_linear.vhd](/home/shanes/plane_watcher/hdl/rtl/log_to_linear.vhd)
+- [ad9203_ingress.vhd](/home/shanes/plane_watcher/hdl/rtl/ad9203_ingress.vhd)
+- [smartzynq_adc_io.xdc](/home/shanes/plane_watcher/hdl/vivado/constr/smartzynq_adc_io.xdc)
 
-- Calibration was done at `1090 MHz` with CW injection at the detector input.
-- LUT fitting is done in actual FPGA ADC-code space, not by trying to model the
-  analog stages separately.
-- The strong/mid end was already roughly right.
-- The important correction was the weak end: the old LUT floor was too
-  aggressive and effectively threw away about `8-10 dB` of weak-signal range.
+## Current State
 
-## Measured Curve
+The active LUT is a first-light placeholder, not a calibrated RPL model.
 
-| Injected level | ADC center code | Notes |
-|---|---:|---|
-| `-100 dBm` | `2307.5` | floor |
-| `-90 dBm` | `2310.0` | floor |
-| `-80 dBm` | `2306.0` | floor |
-| `-70 dBm` | `2310.0` | barely above floor |
-| `-60 dBm` | `2344.0` | first clearly rising point |
-| `-50 dBm` | `2410.0` | clean anchor |
-| `-40 dBm` | `2489.0` | clean anchor |
-| `-30 dBm` | `2560.0` | clean anchor |
-| `-20 dBm` | `2630.5` | clean anchor |
-| `-18.5 dBm` | `2646.5` | top-end anchor |
+Known facts from the prototype design and datasheets:
 
-## Practical Floor
+- The ADL5513 measurement output rises with RF input level in dB.
+- The nominal ADL5513 slope is `21 mV/dB`.
+- The AD9203 is a `10-bit`, `40 MSPS`, `3 V` CMOS ADC.
+- The prototype uses straight-binary ADC output into the FPGA.
+- The default FPGA encode clock remains `16 MHz` for first power-up; `40 MHz`
+  is the board target after SI and capture validation.
 
-`-80`, `-90`, and `-100 dBm` all collapse into the same narrow ADC-code region
-around `0x904`. That is the practical floor of this analog chain. Below that,
-the front-end is no longer providing meaningful separation.
+## Required Bench Capture
 
-Current LUT behaviour:
-- clamp low at about `0x904`
-- interpolate from `0x928 -> -60 dBm`
-- clamp high above `0xA57 -> -18.5 dBm`
+Before treating reported power as calibrated, capture the actual FPGA ADC codes
+at `1090 MHz` with known CW input levels at the detector input.
 
-## Why The LUT Changed
+Minimum useful sweep:
 
-The previous LUT treated roughly `0x90D` as about `-60.5 dBm`. Bench data
-showed that this was wrong: the chain is already on the floor there. In
-practice that meant weak packets were being zeroed too early.
+| Input level | Capture |
+|---:|---|
+| `-80 dBm` | quiet/floor anchor |
+| `-70 dBm` | weak-signal anchor |
+| `-60 dBm` | lower linear-in-dB anchor |
+| `-50 dBm` | decode reference candidate |
+| `-40 dBm` | mid-range anchor |
+| `-30 dBm` | strong-signal anchor |
+| `-20 dBm` | upper anchor / compression check |
 
-The current LUT instead uses:
-- measured floor around `0x904`
-- measured anchors from `-60 dBm` through `-18.5 dBm`
+Record the ADC center code, min/max, OTR count, and whether the bit-toggle
+health register shows all ten data bits moving as expected.
 
-See the updated plot:
+## Updating The LUT
 
-![AD8313 calibration](./generated/ad8313_lut_calibration.svg)
-
-## Analog Sanity Checks
-
-The AD8132 differential driver was checked and appears sane:
-- output common-mode around `1.67 V`
-- both outputs move as a balanced differential pair
-- no obvious bias fault was found in the detector-to-ADC driver stage
-
-So the remaining performance work is more likely in:
-- low-end sensitivity allocation
-- preamble gating / thresholding
-- frontend noise / interference behaviour
-
-## Next Work
-
-After this LUT update, the next investigation should focus on preamble quality
-gates and detector thresholds rather than more ADC-driver debugging.
+Replace the placeholder `CODE_FLOOR`, `CODE_POINTS`, and `DBM_POINTS` arrays in
+`log_to_linear.vhd` with measured prototype-board ADC codes. Keep the
+calibration in FPGA code space; this automatically includes detector slope,
+driver offset/gain, ADC reference/span, and pin-capture polarity.

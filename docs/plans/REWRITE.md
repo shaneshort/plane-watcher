@@ -256,6 +256,167 @@ yield ~6 dB better SNR on weak signals. This is a cheap improvement but not
 required for initial bring-up — the existing nearest-sample approach works and
 can be optimised later.
 
+## Target Board: Smart ZYNQ SL (V1.3B, XC7Z020-CLG484)
+
+The decoupled frontend will run on the Smart ZYNQ SL — a generic Zynq-7020
+development board with no on-board RF hardware. The RF chain (TQP3M9036 → SAW →
+AD8318 → AD8009 → AD9238) lives on a custom daughterboard connected via the
+2.54mm GPIO headers.
+
+Same Zynq-7020 silicon as the Fishball, but **CLG484 package** (not CLG400):
+all pin constraints get rewritten regardless of package match. FPGA resource
+budget (BRAM, DSP48E, LUTs) carries over unchanged from the Fishball design.
+
+### Bank allocation
+
+| Bank | Function | VCCIO |
+|------|----------|-------|
+| 13 | RGB LCD FPC (V1.3B only) — unused by plane-watcher | 3.3V |
+| 33 | J6 GPIO header — daughterboard ADC bus | VADJ (default 3.3V, can be 1.8V) |
+| 34 | On-board peripherals (UART, HDMI, LEDs, keys, EEPROM, 50 MHz clock) | 3.3V |
+| 35 | J5 GPIO header AND ethernet PHY RGMII pins (shared) | 3.3V fixed |
+
+J6/Bank 33 has 34 GPIO pins, completely free, with adjustable VCCIO.
+J5/Bank 35 has 34 GPIO pins; ~16 are consumed by the RTL8211E ethernet,
+leaving ~18 free.
+
+### V1 daughterboard pin allocation
+
+**J6 / Bank 33 (24-bit ADC data bus, both channels independent):**
+
+| Signal | Count |
+|---|---|
+| AD9238 D[11:0] channel A | 12 |
+| AD9238 D[11:0] channel B | 12 |
+| AD9238 OTR A, OTR B | 2 |
+| AD9238 DCO (output from ADC) | 1 |
+| Spare (tie to GND for return path improvement) | 7 |
+
+Total: 27 of 34 pins used. Multiplexed-output mode (combining both channels
+onto one bus) was considered for V1 but deferred — the pin saving is real but
+the only V1 use case for it is improving ground distribution on the header,
+and we'd rather measure SI on a real board before committing to that
+complexity. See "V2 considerations" below.
+
+### V1 bring-up pin map (channel A only)
+
+A 65 MSPS **AD9248** (14-bit) breakout — the generic "High_Speed_ADC_V1.0" —
+is plugged *directly* onto the Smart ZYNQ SL J6 header, row-for-row aligned.
+No jumper wires.
+
+The decode pipeline is sized for 12 bits, so only chip `D[13:2]` (the top
+twelve) are claimed by the design. Chip `D[1:0]` physically connect to FPGA
+pins `T22`/`U22` but are not exposed as ports in the XDC — the ADC can drive
+the pins harmlessly, nothing on the FPGA consumes them.
+
+Channel B is not wired: the breakout's `BCL` and `BOT` pins hang past the
+end of the J6 header (the breakout header is shorter than J6) and make no
+electrical contact. Inside the RTL, `adsb_logdet_bringup` ties the
+`ad9238_ingress` B-channel *inputs* to `'0'` for completeness.
+
+| Breakout pin | FPGA pin | Signal |
+|---|---|---|
+| `ACL` | AB16 | `adc_encode` (FPGA → ADC CLK) |
+| `AOT` | AA16 | `adc_otr_a` |
+| `D0` | T22 | not in design (chip LSB, discarded) |
+| `D1` | U22 | not in design (chip LSB, discarded) |
+| `D2` | V22 | `adc_data_a[0]` |
+| `D3` | W22 | `adc_data_a[1]` |
+| `D4` | Y20 | `adc_data_a[2]` |
+| `D5` | Y21 | `adc_data_a[3]` |
+| `D6` | AA22 | `adc_data_a[4]` |
+| `D7` | AB22 | `adc_data_a[5]` |
+| `D8` | AA21 | `adc_data_a[6]` |
+| `D9` | AB21 | `adc_data_a[7]` |
+| `D10` | AB20 | `adc_data_a[8]` |
+| `D11` | AB19 | `adc_data_a[9]` |
+| `D12` | Y19 | `adc_data_a[10]` |
+| `D13` | AA19 | `adc_data_a[11]` |
+| `BCL`, `BOT` | — | no contact (overhangs the end of J6) |
+| `+5V`, `GND` (breakout side) | — | breakout powered separately |
+
+Constraints live in `hdl/vivado/constr/smartzynq_adc_io.xdc` and are included
+in the Phase 1 build.
+
+**J5 / Bank 35 (clock + GPS + ethernet coexistence):**
+
+| Signal | Count |
+|---|---|
+| Ethernet RGMII (consumed by on-board PHY) | ~16 |
+| AD9238 ENCODE (FPGA → ADC) | 1 |
+| GPS PPS input | 1 |
+| GPS UART TX/RX | 2 |
+| Spare (debug, status indicators) | ~14 |
+
+SmartZynq GPS pin assignment for the AD9238 bring-up build:
+
+| Signal | FPGA pin | Header/bank | Direction |
+|---|---|---|---|
+| `gps_pps` | F16 | J5 / Bank 35 | GPS PPS → FPGA + PS EMIO GPIO[17] |
+| `GPS_UART_txd` | E16 | J5 / Bank 35 | PS UART1 TX → GPS RX |
+| `GPS_UART_rxd` | D16 | J5 / Bank 35 | GPS TX → PS UART1 RX |
+
+ENCODE must source from a 3.3V bank: the AD9238's CMOS clock input requires
+VIH ≥ 2.0V, and 1.8V LVCMOS VOH (~1.35V) does not meet it. This forces the
+split — ENCODE on Bank 35 even if data is on Bank 33 at 1.8V.
+
+### V1 VCCIO decision
+
+**Start at 3.3V everywhere. Drop Bank 33 to 1.8V only if measured noise on
+the AD8318 output during active sampling indicates digital coupling.**
+
+Rationale: the noise reduction from 1.8V LVCMOS is real (~70% lower switching
+power, slower edges), but 3.3V matches vendor default, gives wider noise margin
+for the daughterboard interconnect, and avoids the need to swap RA/RB resistors
+on the board back. If the daughterboard layout has good ground separation
+between the digital and analogue sections, 3.3V will be fine. If the AD8318
+output shows degraded noise floor when the FPGA is actively sampling vs idle,
+that is concrete evidence for dropping to 1.8V.
+
+### V2 considerations
+
+These are deliberate non-goals for V1 but worth recording for later:
+
+1. **AD9238 multiplexed output mode** — both channels share Channel A's data
+   bus, alternating on each ENCODE edge. Reduces the data bus from 24 to 12
+   data lines, freeing ~12 J6 pins for use as ground returns. Requires DDR
+   capture in the FPGA (130 MHz effective bus rate at 65 MSPS encode) and a
+   small demux state machine. Worth revisiting if V1 SI measurements show
+   crosstalk or coupled noise on the data bus.
+
+2. **Pre-decimation averaging in the downsampler** — replace nearest-sample
+   selection with a box-car or CIC filter averaging ~4 samples before
+   decimating to 16 MSPS. Yields ~6 dB SNR improvement on weak signals at
+   negligible resource cost. Independent of V1 vs V2 hardware — purely an
+   RTL change.
+
+3. **Dual-channel diversity or dual-gain** — currently both ADC channels are
+   captured but only channel A drives the decode pipeline. Channel B is
+   passed through to PS for diagnostics. Future work could combine the
+   channels in PS for diversity reception or extended dynamic range. No FPGA
+   changes required for this evolution path.
+
+### Port scope beyond the RF frontend
+
+Moving from Fishball to Smart ZYNQ SL is broader than the REWRITE rework
+above. The decode pipeline carries over unchanged (per the `adsb_pl_wrapper`
+boundary), but everything around it is fresh:
+
+- **Pin constraints**: complete rewrite for CLG484 package
+- **Vivado block design**: PS config (GEM0 on EMIO to RTL8211E, UART on
+  Bank 34), MMCM (50 MHz → 100 MHz S_AXI_ACLK + 65 MHz ADC encode), AXI
+  register block. No vendor BD to inherit from.
+- **Device tree**: full DTS from scratch via Petalinux from the hardware XSA
+- **Linux**: full Petalinux build (the hellofpga.com tutorial set §8.5
+  covers exactly this board)
+- **Network**: `pluto.local` → fresh hostname, fresh SSH keys
+- **Deploy scripts**: hostname updates throughout
+- **`ps/internal/radio/`**: delete entirely — no controllable RF gain in this
+  chain. The `plane-feeder` radio tuning section and AD9363 saturation-counter
+  gain guard also go away.
+- **`firmware/` submodule**: replaced (Pluto kernel fork is unusable for this
+  board)
+
 ## Open Questions
 
 1. **AD8318 transfer function** — needed to generate the antilog LUT entries.
@@ -266,3 +427,9 @@ can be optimised later.
    typical received signal levels land where the existing thresholds expect them
    (`POWER_THRESHOLD=2000`, peak ~8000). This depends on the AD8009 gain/offset
    and is best determined from measured captures once hardware is available.
+3. **AD9238 OTR pin count in multiplexed mode** — datasheet check needed: is
+   OTR multiplexed onto a single pin in mux mode, or do both channels keep
+   independent OTR outputs? Affects V2 pin budget by 1.
+4. **Ethernet PHY reset path** — schematic shows `ETH_RST` net but it's not
+   clear from the snippet whether it's driven from an FPGA EMIO GPIO or just
+   pulled high to DVDD33. Verify before finalising the device tree.

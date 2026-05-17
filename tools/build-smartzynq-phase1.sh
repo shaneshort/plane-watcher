@@ -20,8 +20,8 @@ PROJECT_DIR="${PROJECT_DIR:-$REPO_ROOT/build/smartzynq/vivado}"
 BASE_ADDR="${BASE_ADDR:-0x43C00000}"
 JOBS="${JOBS:-$(nproc)}"
 # ADC encode clock (MHz). Must match logdet_pkg.ENCODE_CLK_HZ. Conservative
-# default for breadboard bring-up; raise to 65.0 once signal integrity is
-# validated on the daughterboard.
+# default for prototype bring-up; raise toward 40.0 after signal integrity and
+# decode timing are validated on the AD9203 board.
 ENCODE_MHZ="${ENCODE_MHZ:-16.000}"
 
 if [[ ! -f "$VIVADO_SETTINGS" ]]; then
