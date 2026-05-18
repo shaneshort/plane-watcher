@@ -1,0 +1,65 @@
+/dts-v1/;
+
+/*
+ * Phase B EDF fitImage template — mirrors the PetaLinux image.ub layout so the
+ * existing on-SD boot.scr loads it without modification.
+ *
+ * Placeholders (@ZIMAGE@, @DTB@, @ROOTFS@) are filled in by pack-image-ub.sh.
+ * Load/entry addresses match what the EDF zynq-zc702-sdt-full machine conf sets
+ * (UBOOT_ENTRYPOINT/LOADADDRESS = 0x300000) and what the existing PetaLinux
+ * image.ub uses, so U-Boot's bootm places the kernel at the same address either
+ * way.
+ *
+ * Ramdisk image MUST be the raw .cpio.gz, NOT .cpio.gz.u-boot — the FIT
+ * `type = "ramdisk"` attribute already tells U-Boot what it is; the extra
+ * mkimage header on the .u-boot variant breaks the kernel's initrd unpacker.
+ */
+
+/ {
+    description = "EDF Phase B test fitImage (zynq-zc702-sdt-full kernel + patched DTB + core-image-minimal initrd)";
+    #address-cells = <1>;
+
+    images {
+        kernel-1 {
+            description = "Linux kernel";
+            data = /incbin/("@ZIMAGE@");
+            type = "kernel";
+            arch = "arm";
+            os = "linux";
+            compression = "none";
+            load = <0x00300000>;
+            entry = <0x00300000>;
+            hash-1 { algo = "sha256"; };
+        };
+
+        fdt-cortexa9-linux.dtb {
+            description = "Flattened Device Tree blob";
+            data = /incbin/("@DTB@");
+            type = "flat_dt";
+            arch = "arm";
+            compression = "none";
+            hash-1 { algo = "sha256"; };
+        };
+
+        ramdisk-1 {
+            description = "core-image-minimal";
+            data = /incbin/("@ROOTFS@");
+            type = "ramdisk";
+            arch = "arm";
+            os = "linux";
+            compression = "none";
+            hash-1 { algo = "sha256"; };
+        };
+    };
+
+    configurations {
+        default = "conf-cortexa9-linux.dtb";
+
+        conf-cortexa9-linux.dtb {
+            description = "1 Linux kernel, FDT blob, ramdisk";
+            kernel = "kernel-1";
+            fdt = "fdt-cortexa9-linux.dtb";
+            ramdisk = "ramdisk-1";
+        };
+    };
+};

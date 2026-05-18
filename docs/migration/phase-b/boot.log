@@ -1,0 +1,144 @@
+U-Boot 2025.01-g5e0d8abc7e09 (Nov 12 2025 - 07:44:59 +0000)
+
+CPU:   Zynq 7z020
+Silicon: v3.1
+Model: Xilinx Zynq
+DRAM:  ECC disabled 512 MiB
+Core:  25 devices, 15 uclasses, devicetree: board
+Flash: 0 Bytes
+NAND:  0 MiB
+MMC:   mmc@e0100000: 0
+Loading Environment from FAT... *** Error - No Valid Environment Area found
+*** Warning - bad env area, using default environment
+
+In:    serial@e0000000
+Out:   serial@e0000000
+Err:   serial@e0000000
+Net:
+ZYNQ GEM: e000b000, mdio bus e000b000, phyaddr 0, interface gmii
+eth0: ethernet@e000b000
+Autoboot in 2 seconds; press 'q' to stop
+switch to partitions #0, OK
+mmc0 is current device
+Scanning mmc 0:1...
+Found U-Boot script /boot.scr
+3830 bytes read in 18 ms (207 KiB/s)
+## Executing script at 03100000
+Trying to load boot images from mmc0
+51882040 bytes read in 2825 ms (17.5 MiB/s)
+## Loading kernel from FIT Image at 10100000 ...
+   Using 'conf-cortexa9-linux.dtb' configuration
+   Verifying Hash Integrity ... OK
+   Trying 'kernel-1' kernel subimage
+     Description:  Linux kernel
+     Type:         Kernel Image
+     Compression:  uncompressed
+     Data Start:   0x1010010c
+     Data Size:    5902784 Bytes = 5.6 MiB
+     Architecture: ARM
+     OS:           Linux
+     Load Address: 0x00300000
+     Entry Point:  0x00300000
+     Hash algo:    sha256
+     Hash value:   0e2186b17c1bd6be4dd014bfa674ea6af12a2d0dcc1dfb8af0b6c121da0a6896
+   Verifying Hash Integrity ... sha256+ OK
+## Loading ramdisk from FIT Image at 10100000 ...
+   Using 'conf-cortexa9-linux.dtb' configuration
+   Verifying Hash Integrity ... OK
+   Trying 'ramdisk-1' ramdisk subimage
+     Description:  core-image-minimal
+     Type:         RAMDisk Image
+     Compression:  uncompressed
+     Data Start:   0x106a7898
+     Data Size:    45952194 Bytes = 43.8 MiB
+     Architecture: ARM
+     OS:           Linux
+     Load Address: unavailable
+     Entry Point:  unavailable
+     Hash algo:    sha256
+     Hash value:   d3c499d16c80718aee2c695fb6d51352f9853d761d0eb99131bc8d782b89b7dc
+   Verifying Hash Integrity ... sha256+ OK
+## Loading fdt from FIT Image at 10100000 ...
+   Using 'conf-cortexa9-linux.dtb' configuration
+   Verifying Hash Integrity ... OK
+   Trying 'fdt-cortexa9-linux.dtb' fdt subimage
+     Description:  Flattened Device Tree blob
+     Type:         Flat Device Tree
+     Compression:  uncompressed
+     Data Start:   0x106a13dc
+     Data Size:    25588 Bytes = 25 KiB
+     Architecture: ARM
+     Hash algo:    sha256
+     Hash value:   a0f16333285a2448417b4262b176f7dfa6d525ff2c10af24530f31f653d9d579
+   Verifying Hash Integrity ... sha256+ OK
+   Booting using the fdt blob at 0x106a13dc
+Working FDT set to 106a13dc
+   Loading Kernel Image to 300000
+   Loading Ramdisk to 1aeeb000, end 1dabdcc2 ... OK
+   Loading Device Tree to 1aee1000, end 1aeea3f3 ... OK
+Working FDT set to 1aee1000
+
+Starting kernel ...
+
+Booting Linux on physical CPU 0x0
+Linux version 6.12.40-xilinx-g31626ef92ff1 (oe-user@oe-host) (arm-amd-linux-gnueabi-gcc (GCC) 13.4.0, GNU ld (GNU Binutils) 2.42.0.20240723) #1 SMP PREEMPT Fri Nov  7 15:28:23 UTC 2025
+CPU: ARMv7 Processor [413fc090] revision 0 (ARMv7), cr=18c5387d
+CPU: PIPT / VIPT nonaliasing data cache, VIPT aliasing instruction cache
+OF: fdt: Machine model: Xilinx ZC702 board
+earlycon: cdns0 at MMIO 0xe0000000 (options '115200n8')
+printk: legacy bootconsole [cdns0] enabled
+Memory policy: Data cache writealloc
+cma: Reserved 16 MiB at 0x1f000000 on node -1
+Zone ranges:
+  Normal   [mem 0x0000000000000000-0x000000001fffffff]
+  HighMem  empty
+Movable zone start for each node
+Early memory node ranges
+  node   0: [mem 0x0000000000000000-0x000000001fffffff]
+Initmem setup node 0 [mem 0x0000000000000000-0x000000001fffffff]
+OF: reserved mem: Reserved memory: No reserved-memory node in the DT
+percpu: Embedded 14 pages/cpu s27340 r8192 d21812 u57344
+Kernel command line: console=ttyPS0,115200 earlycon root=/dev/ram0 rw
+Dentry cache hash table entries: 65536 (order: 6, 262144 bytes, linear)
+Inode-cache hash table entries: 32768 (order: 5, 131072 bytes, linear)
+Built 1 zonelists, mobility grouping on.  Total pages: 131072
+mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=2, Nodes=1
+... (cpu/clock/L2C/SMP init omitted for brevity) ...
+Memory: 443216K/524288K available (8192K kernel code, 288K rwdata, 2460K rodata, 1024K init, 177K bss, 63416K reserved, 16384K cma-reserved, 0K highmem)
+... (driver init omitted) ...
+e0000000.serial: ttyPS0 at MMIO 0xe0000000 (irq = 26, base_baud = 6249999) is a xuartps
+printk: legacy console [ttyPS0] enabled
+printk: legacy bootconsole [cdns0] disabled
+... (more driver init) ...
+Trying to unpack rootfs image as initramfs...
+... (initramfs unpack OK; no "not initramfs" warning) ...
+Freeing initrd memory: 44876K
+... (mtd/macb/sdhci/usbhid init) ...
+e0001000.serial: ttyPS1 at MMIO 0xe0001000 (irq = 48, base_baud = 6249999) is a xuartps
+of-fpga-region fpga-region: FPGA Region probed
+input: gpio-keys as /devices/soc0/gpio-keys/input/input0
+of_cfs_init
+of_cfs_init: OK
+clk: Disabling unused clocks
+ALSA device list:
+  No soundcards found.
+Freeing unused kernel image (initmem) memory: 1024K
+Run /init as init process
+systemd[1]: System time before build time, advancing clock.
+systemd[1]: systemd 255.21^ running in system mode ...
+systemd[1]: Detected architecture arm.
+
+Welcome to AMD Embedded Development Framework Linux distribution 25.11.1+release-fb2d654ac25ecf08a6023fa570c1871305361af1 (scarthgap)!
+
+... (systemd unit startup omitted) ...
+macb e000b000.ethernet end0: Link is Up - 100Mbps/Full - flow control tx
+... (more units) ...
+[  OK  ] Started Serial Getty on ttyPS0.
+[  OK  ] Reached target Login Prompts.
+[  OK  ] Started User Login Management.
+[  OK  ] Reached target Multi-User System.
+
+AMD Embedded Development Framework Linux distribution 25.11.1+release-fb2d654ac25ecf08a6023fa570c1871305361af1 amd-edf ttyPS0
+
+amd-edf login:
