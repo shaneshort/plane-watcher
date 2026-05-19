@@ -20,11 +20,11 @@ func init() {
 	build.Register("ps-stage", func(cfg *config.Config, _ build.Selections) (build.Step, error) {
 		return NewPSStageStep(cfg)
 	})
-	build.Register("petalinux-fsbl-clean", func(cfg *config.Config, _ build.Selections) (build.Step, error) {
-		return NewPetalinuxFSBLCleanStep(cfg)
+	build.Register("yocto-fsbl-clean", func(cfg *config.Config, _ build.Selections) (build.Step, error) {
+		return NewYoctoFSBLCleanStep(cfg)
 	})
-	build.Register("petalinux", func(cfg *config.Config, sel build.Selections) (build.Step, error) {
-		return NewPetalinuxStep(cfg, sel)
+	build.Register("yocto", func(cfg *config.Config, sel build.Selections) (build.Step, error) {
+		return NewYoctoStep(cfg, sel)
 	})
 	build.Register("package-boot", func(cfg *config.Config, sel build.Selections) (build.Step, error) {
 		return NewPackageBootStep(cfg, sel)

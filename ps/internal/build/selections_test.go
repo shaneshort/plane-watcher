@@ -10,7 +10,7 @@ func TestSelectionsValidate(t *testing.T) {
 	}{
 		{"empty plan", Selections{}, true},
 		{"bitstream only", Selections{Bitstream: true}, true},
-		{"petalinux only", Selections{Petalinux: true}, true},
+		{"yocto only", Selections{Yocto: true}, true},
 		{"both ps modes mutually exclusive", Selections{PSSlipstream: true, PSHotswap: true}, false},
 		{"reboot without ssh deploy", Selections{Bitstream: true, Reboot: true}, false},
 		{"reboot with ssh", Selections{Bitstream: true, Deploy: DeploySSH, Reboot: true}, true},

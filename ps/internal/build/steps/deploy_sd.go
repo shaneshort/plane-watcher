@@ -29,7 +29,7 @@ func NewDeploySDStep(cfg *config.Config, sel build.Selections) (build.Step, erro
 	}
 	return &deploySDStep{
 		cfg:          cfg,
-		includeImage: sel.Petalinux,
+		includeImage: sel.Yocto,
 		eject:        sel.Eject,
 	}, nil
 }

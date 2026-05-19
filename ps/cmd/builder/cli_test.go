@@ -12,24 +12,24 @@ func TestParseFlagsBitstreamOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags: %v", err)
 	}
-	if !sel.Bitstream || sel.Petalinux {
+	if !sel.Bitstream || sel.Yocto {
 		t.Errorf("unexpected selections: %+v", sel)
 	}
 }
 
 func TestParseFlagsAllStages(t *testing.T) {
-	sel, _, err := parseFlags([]string{"--bitstream", "--petalinux", "--ps-slipstream", "--deploy=ssh", "--reboot"})
+	sel, _, err := parseFlags([]string{"--bitstream", "--yocto", "--ps-slipstream", "--deploy=ssh", "--reboot"})
 	if err != nil {
 		t.Fatalf("parseFlags: %v", err)
 	}
-	if !sel.Bitstream || !sel.Petalinux || !sel.PSSlipstream || sel.Deploy != build.DeploySSH || !sel.Reboot {
+	if !sel.Bitstream || !sel.Yocto || !sel.PSSlipstream || sel.Deploy != build.DeploySSH || !sel.Reboot {
 		t.Errorf("unexpected selections: %+v", sel)
 	}
 }
 
 func TestParseFlagsDeployAliases(t *testing.T) {
 	for _, in := range []string{"--deploy=sd", "--deploy=SD"} {
-		sel, _, err := parseFlags([]string{"--petalinux", in})
+		sel, _, err := parseFlags([]string{"--yocto", in})
 		if err != nil {
 			t.Fatalf("parseFlags(%q): %v", in, err)
 		}

@@ -17,7 +17,7 @@ func TestDeploySDCopiesArtefacts(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(deploy, "BOOT.BIN"), []byte("boot"), 0o644)
 	_ = os.WriteFile(filepath.Join(deploy, "image.ub"), []byte("img"), 0o644)
 	cfg := &config.Config{BuildDeployDir: deploy, SDMount: sd}
-	s, err := NewDeploySDStep(cfg, build.Selections{Petalinux: true, Deploy: build.DeploySD})
+	s, err := NewDeploySDStep(cfg, build.Selections{Yocto: true, Deploy: build.DeploySD})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -21,9 +21,9 @@ func init() {
 		"ps-slipstream-verify":  nil,
 		"ps-build":              nil,
 		"ps-stage":              {"ps-build"},
-		"petalinux-fsbl-clean":  {"vivado"},
-		"petalinux":             nil, // deps set below per selection
-		"package-boot":          {"petalinux"},
+		"yocto-fsbl-clean":  {"vivado"},
+		"yocto":             nil, // deps set below per selection
+		"package-boot":          {"yocto"},
 		"deploy-ssh":            {"package-boot"},
 		"deploy-sd":             {"package-boot"},
 		"deploy-ssh-ps":         {"ps-build"},
@@ -32,10 +32,10 @@ func init() {
 	for n, d := range stubs {
 		name, deps := n, d
 		Register(name, func(cfg *config.Config, sel Selections) (Step, error) {
-			if name == "petalinux" {
+			if name == "yocto" {
 				if sel.Bitstream {
-					if sel.Petalinux && !sel.SkipFSBLClean {
-						return stubStep{name: name, deps: []string{"vivado", "petalinux-fsbl-clean"}}, nil
+					if sel.Yocto && !sel.SkipFSBLClean {
+						return stubStep{name: name, deps: []string{"vivado", "yocto-fsbl-clean"}}, nil
 					}
 					return stubStep{name: name, deps: []string{"vivado"}}, nil
 				}

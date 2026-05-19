@@ -36,7 +36,7 @@ func TestDeploySSHBuildsExpectedCommand(t *testing.T) {
 		SSHPassword:    "pw",
 		TargetImageDir: "/run/media/mmcblk0p1",
 	}
-	s, err := NewDeploySSHStep(cfg, build.Selections{Bitstream: true, Petalinux: true, Deploy: build.DeploySSH, Reboot: true})
+	s, err := NewDeploySSHStep(cfg, build.Selections{Bitstream: true, Yocto: true, Deploy: build.DeploySSH, Reboot: true})
 	if err != nil {
 		t.Fatal(err)
 	}

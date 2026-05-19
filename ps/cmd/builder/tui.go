@@ -48,8 +48,8 @@ func persistLastRun(cfg *config.Config, sel build.Selections) {
 	if sel.Bitstream {
 		lr.Stages = append(lr.Stages, "bitstream")
 	}
-	if sel.Petalinux {
-		lr.Stages = append(lr.Stages, "petalinux")
+	if sel.Yocto {
+		lr.Stages = append(lr.Stages, "yocto")
 	}
 	if sel.PSSlipstream {
 		lr.Stages = append(lr.Stages, "ps-slipstream")

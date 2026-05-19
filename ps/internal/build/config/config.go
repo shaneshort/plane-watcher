@@ -32,9 +32,9 @@ type Config struct {
 	// Fixed paths derived from RepoRoot. Defaults assigned in LoadAll;
 	// callers may override per-Config field for tests or wrapper scripts.
 	RepoRoot   string
-	StagingDir string // firmware/petalinux/build/pwbuild-staging (Phase E moves out of petalinux/)
-	LogDir     string // firmware/petalinux/build/builder-logs
-	LockPath   string // firmware/petalinux/build/.builder.lock
+	StagingDir string // firmware/build/pwbuild-staging
+	LogDir     string // firmware/build/builder-logs
+	LockPath   string // firmware/build/.builder.lock
 
 	// Recipe paths
 	RecipeIncludePath string // firmware/yocto/meta-plane-watcher/recipes-pwtools/plane-watcher-tools/plane-watcher-tools-binaries.inc

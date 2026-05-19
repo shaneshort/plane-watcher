@@ -16,7 +16,7 @@ func parseFlags(args []string) (build.Selections, bool, error) {
 	fs := flag.NewFlagSet("builder", flag.ContinueOnError)
 	var (
 		bitstream    = fs.Bool("bitstream", false, "build Vivado bitstream + XSA")
-		petalinux    = fs.Bool("petalinux", false, "run full petalinux-build")
+		yocto        = fs.Bool("yocto", false, "run full Yocto/EDF firmware-image build")
 		psSlipstream = fs.Bool("ps-slipstream", false, "cross-build PS tools and slipstream into rootfs")
 		psHotswap    = fs.Bool("ps-hotswap", false, "cross-build PS tools and hot-swap to running board")
 		deploy       = fs.String("deploy", "none", "deploy mode: none|ssh|sd")
@@ -34,7 +34,7 @@ func parseFlags(args []string) (build.Selections, bool, error) {
 	}
 	sel := build.Selections{
 		Bitstream:     *bitstream,
-		Petalinux:     *petalinux,
+		Yocto:         *yocto,
 		PSSlipstream:  *psSlipstream,
 		PSHotswap:     *psHotswap,
 		Deploy:        dep,
@@ -43,7 +43,7 @@ func parseFlags(args []string) (build.Selections, bool, error) {
 		NoRestart:     *noRestart,
 		Eject:         *eject,
 	}
-	interactive := !*bitstream && !*petalinux && !*psSlipstream && !*psHotswap && dep == build.DeployNone
+	interactive := !*bitstream && !*yocto && !*psSlipstream && !*psHotswap && dep == build.DeployNone
 	return sel, interactive, nil
 }
 

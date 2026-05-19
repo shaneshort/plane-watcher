@@ -29,7 +29,7 @@ func TestPackageBootFullRebuildNeedsImage(t *testing.T) {
 	deploy := t.TempDir()
 	_ = os.WriteFile(filepath.Join(deploy, "BOOT.BIN"), []byte("x"), 0o644)
 	cfg := &config.Config{BuildDeployDir: deploy}
-	s, _ := NewPackageBootStep(cfg, build.Selections{Petalinux: true})
+	s, _ := NewPackageBootStep(cfg, build.Selections{Yocto: true})
 	err := s.Run(context.Background(), func(build.Event) {})
 	if err == nil {
 		t.Fatal("expected missing-image error")

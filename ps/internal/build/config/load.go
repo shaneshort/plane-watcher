@@ -65,14 +65,14 @@ func LoadAll(o LoadAllOptions) (*Config, error) {
 	cfg.Commands = cmds
 	cfg.BuildTOMLPath = o.BuildTOMLPath
 
-	// StagingDir / LogDir / LockPath still live under firmware/petalinux/build/
-	// because the EDF meta-plane-watcher layer's PWBUILD_STAGING_DIR default in
-	// conf/layer.conf points there. Phase E (container + wrapper orchestration)
-	// is the natural moment to lift these out of firmware/petalinux/; doing it
-	// here would require a coordinated layer.conf change.
-	cfg.StagingDir = filepath.Join(o.RepoRoot, "firmware", "petalinux", "build", "pwbuild-staging")
-	cfg.LogDir = filepath.Join(o.RepoRoot, "firmware", "petalinux", "build", "builder-logs")
-	cfg.LockPath = filepath.Join(o.RepoRoot, "firmware", "petalinux", "build", ".builder.lock")
+	// Builder-owned working dirs live under firmware/build/ — outside
+	// firmware/petalinux/ so they survive a Phase G petalinux/ deletion. The
+	// EDF meta-plane-watcher layer's PWBUILD_STAGING_DIR default in
+	// conf/layer.conf resolves to the same path via ${LAYERDIR}/../../build,
+	// so bitbake's recipe and the Go builder agree.
+	cfg.StagingDir = filepath.Join(o.RepoRoot, "firmware", "build", "pwbuild-staging")
+	cfg.LogDir = filepath.Join(o.RepoRoot, "firmware", "build", "builder-logs")
+	cfg.LockPath = filepath.Join(o.RepoRoot, "firmware", "build", ".builder.lock")
 	cfg.RecipeIncludePath = filepath.Join(
 		o.RepoRoot,
 		"firmware", "yocto", "meta-plane-watcher",

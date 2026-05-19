@@ -63,8 +63,8 @@ $EDITOR tools/plane_watcher.env
 # Or rebuild only the bitstream and BOOT.BIN
 ./tools/rebuild.sh --bitstream --no-deploy
 
-# Build + slipstream PS tools into a fresh Petalinux image, then deploy
-go -C ps run ./cmd/builder --ps-slipstream --petalinux --deploy=ssh --reboot
+# Build + slipstream PS tools into a fresh Yocto/EDF image, then deploy
+go -C ps run ./cmd/builder --ps-slipstream --yocto --deploy=ssh --reboot
 
 # Or hot-swap fresh ARM binaries onto a running board (no image rebuild)
 go -C ps run ./cmd/builder --ps-hotswap

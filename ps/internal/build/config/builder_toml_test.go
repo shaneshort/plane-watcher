@@ -44,7 +44,7 @@ reboot_after_ssh_deploy = false
 	}
 	if err := os.WriteFile(local, []byte(`
 [last_run]
-stages = ["bitstream", "petalinux"]
+stages = ["bitstream", "yocto"]
 deploy = "ssh"
 `), 0o644); err != nil {
 		t.Fatal(err)

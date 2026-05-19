@@ -54,4 +54,4 @@ fi
 
 echo "Phase 1 bitstream + XSA ready:"
 echo "  XSA: $xsa_path"
-echo "  Feed to Petalinux with: tools/build-petalinux.sh --xsa $xsa_path"
+echo "  Feed to Yocto with: XSA_PATH=$xsa_path tools/build-yocto.sh"

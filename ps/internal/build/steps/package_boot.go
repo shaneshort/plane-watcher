@@ -20,10 +20,10 @@ func NewPackageBootStep(cfg *config.Config, sel build.Selections) (build.Step, e
 	if cfg.BuildDeployDir == "" {
 		return nil, fmt.Errorf("package-boot: BuildDeployDir empty")
 	}
-	deps := []string{"petalinux"}
+	deps := []string{"yocto"}
 	return &packageBootStep{
 		cfg:          cfg,
-		requireImage: sel.Petalinux,
+		requireImage: sel.Yocto,
 		deps:         deps,
 	}, nil
 }

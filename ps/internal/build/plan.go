@@ -39,16 +39,16 @@ func BuildPlan(sel Selections, cfg *config.Config) (Plan, error) {
 	if sel.Bitstream {
 		names = append(names, "vivado")
 	}
-	if sel.Bitstream && sel.Petalinux && !sel.SkipFSBLClean {
-		names = append(names, "petalinux-fsbl-clean")
+	if sel.Bitstream && sel.Yocto && !sel.SkipFSBLClean {
+		names = append(names, "yocto-fsbl-clean")
 	}
-	if sel.Petalinux || (sel.Bitstream && !sel.PSHotswap) {
-		// Bitstream alone still runs the petalinux leaf script in
+	if sel.Yocto || (sel.Bitstream && !sel.PSHotswap) {
+		// Bitstream alone still runs the yocto leaf script in
 		// SKIP_BUILD=1 mode to repackage BOOT.BIN. The step instance reads
-		// sel.Petalinux to know whether to skip the full build.
-		names = append(names, "petalinux")
+		// sel.Yocto to know whether to skip the full build.
+		names = append(names, "yocto")
 	}
-	if sel.Bitstream || sel.Petalinux {
+	if sel.Bitstream || sel.Yocto {
 		names = append(names, "package-boot")
 	}
 	if sel.PSHotswap {
@@ -65,11 +65,11 @@ func BuildPlan(sel Selections, cfg *config.Config) (Plan, error) {
 	}
 	switch sel.Deploy {
 	case DeploySSH:
-		if sel.Bitstream || sel.Petalinux {
+		if sel.Bitstream || sel.Yocto {
 			names = append(names, "deploy-ssh")
 		}
 	case DeploySD:
-		if sel.Bitstream || sel.Petalinux {
+		if sel.Bitstream || sel.Yocto {
 			names = append(names, "deploy-sd")
 		}
 	}

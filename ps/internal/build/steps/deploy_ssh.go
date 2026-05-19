@@ -21,7 +21,7 @@ func NewDeploySSHStep(cfg *config.Config, sel build.Selections) (build.Step, err
 	}
 	return &deploySSHStep{
 		cfg:          cfg,
-		includeImage: sel.Petalinux,
+		includeImage: sel.Yocto,
 		reboot:       sel.Reboot,
 	}, nil
 }

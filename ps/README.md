@@ -41,8 +41,8 @@ PS Go tools are built via `builder` (`ps/cmd/builder/`):
 # Hot-swap fresh ARM binaries onto a running board:
 go -C ps run ./cmd/builder --ps-hotswap
 
-# Rebuild the Petalinux image with fresh tools slipstreamed in:
-go -C ps run ./cmd/builder --ps-slipstream --petalinux --deploy=ssh --reboot
+# Rebuild the Yocto/EDF image with fresh tools slipstreamed in:
+go -C ps run ./cmd/builder --ps-slipstream --yocto --deploy=ssh --reboot
 
 # TUI (no flags):
 go -C ps run ./cmd/builder

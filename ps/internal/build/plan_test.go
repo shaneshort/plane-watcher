@@ -19,51 +19,51 @@ func TestPlanBitstreamOnly(t *testing.T) {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	got := strings.Join(planNames(p), ",")
-	if got != "vivado,petalinux,package-boot" {
+	if got != "vivado,yocto,package-boot" {
 		t.Errorf("bitstream-only plan: %s", got)
 	}
 }
 
-func TestPlanPetalinuxOnly(t *testing.T) {
-	p, err := BuildPlan(Selections{Petalinux: true}, testCfg(t))
+func TestPlanYoctoOnly(t *testing.T) {
+	p, err := BuildPlan(Selections{Yocto: true}, testCfg(t))
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	got := strings.Join(planNames(p), ",")
-	if got != "petalinux,package-boot" {
-		t.Errorf("petalinux-only plan: %s", got)
+	if got != "yocto,package-boot" {
+		t.Errorf("yocto-only plan: %s", got)
 	}
 }
 
 func TestPlanFullRebuild(t *testing.T) {
-	p, err := BuildPlan(Selections{Bitstream: true, Petalinux: true}, testCfg(t))
+	p, err := BuildPlan(Selections{Bitstream: true, Yocto: true}, testCfg(t))
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	got := strings.Join(planNames(p), ",")
-	if got != "vivado,petalinux-fsbl-clean,petalinux,package-boot" {
+	if got != "vivado,yocto-fsbl-clean,yocto,package-boot" {
 		t.Errorf("full plan: %s", got)
 	}
 }
 
 func TestPlanFullRebuildSkipFSBL(t *testing.T) {
-	p, err := BuildPlan(Selections{Bitstream: true, Petalinux: true, SkipFSBLClean: true}, testCfg(t))
+	p, err := BuildPlan(Selections{Bitstream: true, Yocto: true, SkipFSBLClean: true}, testCfg(t))
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	got := strings.Join(planNames(p), ",")
-	if got != "vivado,petalinux,package-boot" {
+	if got != "vivado,yocto,package-boot" {
 		t.Errorf("skip-fsbl plan: %s", got)
 	}
 }
 
 func TestPlanSlipstream(t *testing.T) {
-	p, err := BuildPlan(Selections{Petalinux: true, PSSlipstream: true}, testCfg(t))
+	p, err := BuildPlan(Selections{Yocto: true, PSSlipstream: true}, testCfg(t))
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	got := strings.Join(planNames(p), ",")
-	want := "ps-slipstream-verify,ps-build,ps-stage,petalinux,package-boot"
+	want := "ps-slipstream-verify,ps-build,ps-stage,yocto,package-boot"
 	if got != want {
 		t.Errorf("slipstream plan: got %s, want %s", got, want)
 	}
@@ -92,23 +92,23 @@ func TestPlanHotswapNoRestart(t *testing.T) {
 }
 
 func TestPlanDeploySSH(t *testing.T) {
-	p, err := BuildPlan(Selections{Bitstream: true, Petalinux: true, Deploy: DeploySSH, Reboot: true}, testCfg(t))
+	p, err := BuildPlan(Selections{Bitstream: true, Yocto: true, Deploy: DeploySSH, Reboot: true}, testCfg(t))
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	got := strings.Join(planNames(p), ",")
-	if got != "vivado,petalinux-fsbl-clean,petalinux,package-boot,deploy-ssh" {
+	if got != "vivado,yocto-fsbl-clean,yocto,package-boot,deploy-ssh" {
 		t.Errorf("ssh deploy plan: %s", got)
 	}
 }
 
 func TestPlanDeploySD(t *testing.T) {
-	p, err := BuildPlan(Selections{Petalinux: true, Deploy: DeploySD}, testCfg(t))
+	p, err := BuildPlan(Selections{Yocto: true, Deploy: DeploySD}, testCfg(t))
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	got := strings.Join(planNames(p), ",")
-	if got != "petalinux,package-boot,deploy-sd" {
+	if got != "yocto,package-boot,deploy-sd" {
 		t.Errorf("sd deploy plan: %s", got)
 	}
 }

@@ -25,7 +25,7 @@ func (d DeployMode) String() string {
 
 type Selections struct {
 	Bitstream     bool
-	Petalinux     bool
+	Yocto         bool // full Yocto/EDF firmware-image build (was "Petalinux" pre-Phase-E)
 	PSSlipstream  bool
 	PSHotswap     bool
 	Deploy        DeployMode

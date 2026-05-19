@@ -35,7 +35,7 @@ func newComposerModel(cfg *config.Config) *composerModel {
 		// Captured from the typical workflow; subsequent runs persist
 		// whatever the user actually used via SaveLastRun.
 		m.sel.Bitstream = true
-		m.sel.Petalinux = true
+		m.sel.Yocto = true
 		m.sel.PSSlipstream = true
 		m.deploy = build.DeploySSH
 		m.sel.Reboot = true
@@ -44,8 +44,8 @@ func newComposerModel(cfg *config.Config) *composerModel {
 			switch s {
 			case "bitstream":
 				m.sel.Bitstream = true
-			case "petalinux":
-				m.sel.Petalinux = true
+			case "yocto":
+				m.sel.Yocto = true
 			case "ps-slipstream":
 				m.sel.PSSlipstream = true
 			case "ps-hotswap":
@@ -63,7 +63,7 @@ func newComposerModel(cfg *config.Config) *composerModel {
 	m.sel.Deploy = m.deploy
 	m.items = []composerItem{
 		{label: "Bitstream (Vivado)", get: func(s *build.Selections) bool { return s.Bitstream }, set: func(s *build.Selections, v bool) { s.Bitstream = v }},
-		{label: "Petalinux full build", get: func(s *build.Selections) bool { return s.Petalinux }, set: func(s *build.Selections, v bool) { s.Petalinux = v }},
+		{label: "Yocto / EDF firmware image", get: func(s *build.Selections) bool { return s.Yocto }, set: func(s *build.Selections, v bool) { s.Yocto = v }},
 		{label: "PS tools — slipstream", get: func(s *build.Selections) bool { return s.PSSlipstream }, set: func(s *build.Selections, v bool) {
 			s.PSSlipstream = v
 			if v {
@@ -121,7 +121,7 @@ func (m *composerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Refuse to exit the composer with an empty plan; the run
 			// screen would otherwise show nothing for a millisecond and
 			// then exit, which reads as "just exits" to the user.
-			if !m.sel.Bitstream && !m.sel.Petalinux && !m.sel.PSSlipstream && !m.sel.PSHotswap {
+			if !m.sel.Bitstream && !m.sel.Yocto && !m.sel.PSSlipstream && !m.sel.PSHotswap {
 				return m, nil
 			}
 			m.startRun = true

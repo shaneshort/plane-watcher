@@ -1,14 +1,17 @@
 #!/bin/bash
 # Full rebuild chain: Vivado bitstream → FSBL (with sstate invalidation) →
-# Petalinux build + BOOT.BIN packaging → scp image.ub to the running
+# Yocto/EDF build + BOOT.BIN packaging → scp image.ub to the running
 # board and reboot (or fall back to a local SD copy — see --sd).
 # A bitstream-only mode is also available: Vivado rebuild → re-import XSA →
 # repackage BOOT.BIN with the existing FSBL/U-Boot artefacts → deploy
-# BOOT.BIN, skipping the full petalinux-build.
+# BOOT.BIN, skipping the full Yocto rebuild.
+#
+# The canonical entry point is now `go -C ps run ./cmd/builder` (TUI/CLI);
+# this script is the thin shell equivalent retained for habit and CI use.
 #
 # Use the full flow after any change to the PS7 config / bitstream TCL. The
-# cleansstate steps are what makes PS7 or DDR config changes actually
-# propagate into the FSBL — without them, bitbake silently reuses the
+# cleansstate step is what makes PS7 or DDR config changes actually
+# propagate into the FSBL — without it, bitbake silently reuses the
 # cached FSBL built from the previous hardware description.
 #
 # For device-tree, rootfs, or kernel-config iterations, use --fast to skip
@@ -139,18 +142,17 @@ else
 fi
 
 if [[ "$BITSTREAM_ONLY" == "1" ]]; then
-  echo "==> [2/$TOTAL_STEPS] Petalinux: import XSA, package BOOT.BIN only"
-  SKIP_BUILD=1 "$SCRIPT_DIR/build-petalinux.sh"
+  echo "==> [2/$TOTAL_STEPS] Yocto: import XSA, package BOOT.BIN only"
+  SKIP_BUILD=1 "$SCRIPT_DIR/build-yocto.sh"
 elif [[ "$SKIP_FSBL_CLEAN" == "1" ]]; then
   echo "==> [2/$TOTAL_STEPS] Skipping FSBL cleansstate (--fast)"
 else
-  echo "==> [2/$TOTAL_STEPS] Petalinux: cleansstate FSBL stack (fsbl-firmware + fsbl)"
-  # Without these, bitbake reuses cached FSBL from the previous XSA. Learned
+  echo "==> [2/$TOTAL_STEPS] Yocto: cleansstate fsbl-firmware multiconfig"
+  # Without this, bitbake reuses cached FSBL from the previous XSA. Learned
   # the hard way during bring-up.
-  "$RUN_BUILD" petalinux-build -c fsbl-firmware -x cleansstate
-  "$RUN_BUILD" petalinux-build -c fsbl -x cleansstate
-  echo "==> [3/$TOTAL_STEPS] Petalinux: import XSA, build, package BOOT.BIN"
-  "$SCRIPT_DIR/build-petalinux.sh"
+  CLEANSSTATE_FSBL=1 "$SCRIPT_DIR/build-yocto.sh"
+  echo "==> [3/$TOTAL_STEPS] Yocto: import XSA, build, package BOOT.BIN"
+  "$SCRIPT_DIR/build-yocto.sh"
 fi
 
 if [[ "$NO_DEPLOY" == "1" ]]; then
