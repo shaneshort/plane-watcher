@@ -12,7 +12,7 @@ func TestLoadAllPopulatesPaths(t *testing.T) {
 		"ps/cmd/plane-feeder",
 		"tools",
 		"firmware/petalinux/build",
-		"firmware/petalinux/project-spec/meta-user/recipes-pwtools/plane-watcher-tools",
+		"firmware/yocto/meta-plane-watcher/recipes-pwtools/plane-watcher-tools",
 	} {
 		_ = os.MkdirAll(filepath.Join(repo, sub), 0o755)
 	}
@@ -26,7 +26,7 @@ plane-feeder = "/etc/init.d/S99plane-feeder restart"
 [plane-feeder]
 targets = ["arm"]
 `), 0o644)
-	incPath := filepath.Join(repo, "firmware/petalinux/project-spec/meta-user/recipes-pwtools/plane-watcher-tools/plane-watcher-tools-binaries.inc")
+	incPath := filepath.Join(repo, "firmware/yocto/meta-plane-watcher/recipes-pwtools/plane-watcher-tools/plane-watcher-tools-binaries.inc")
 	_ = os.WriteFile(incPath, []byte("stub\n"), 0o644)
 
 	cfg, err := LoadAll(LoadAllOptions{RepoRoot: repo})

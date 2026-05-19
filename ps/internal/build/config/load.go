@@ -65,12 +65,17 @@ func LoadAll(o LoadAllOptions) (*Config, error) {
 	cfg.Commands = cmds
 	cfg.BuildTOMLPath = o.BuildTOMLPath
 
+	// StagingDir / LogDir / LockPath still live under firmware/petalinux/build/
+	// because the EDF meta-plane-watcher layer's PWBUILD_STAGING_DIR default in
+	// conf/layer.conf points there. Phase E (container + wrapper orchestration)
+	// is the natural moment to lift these out of firmware/petalinux/; doing it
+	// here would require a coordinated layer.conf change.
 	cfg.StagingDir = filepath.Join(o.RepoRoot, "firmware", "petalinux", "build", "pwbuild-staging")
 	cfg.LogDir = filepath.Join(o.RepoRoot, "firmware", "petalinux", "build", "builder-logs")
 	cfg.LockPath = filepath.Join(o.RepoRoot, "firmware", "petalinux", "build", ".builder.lock")
 	cfg.RecipeIncludePath = filepath.Join(
 		o.RepoRoot,
-		"firmware", "petalinux", "project-spec", "meta-user",
+		"firmware", "yocto", "meta-plane-watcher",
 		"recipes-pwtools", "plane-watcher-tools",
 		"plane-watcher-tools-binaries.inc",
 	)

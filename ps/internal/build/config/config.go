@@ -29,14 +29,15 @@ type Config struct {
 	// Discovered from ps/cmd/* and ps/cmd/build.toml
 	Commands []CommandMeta
 
-	// Fixed paths derived from RepoRoot
+	// Fixed paths derived from RepoRoot. Defaults assigned in LoadAll;
+	// callers may override per-Config field for tests or wrapper scripts.
 	RepoRoot   string
-	StagingDir string // firmware/petalinux/build/pwbuild-staging
+	StagingDir string // firmware/petalinux/build/pwbuild-staging (Phase E moves out of petalinux/)
 	LogDir     string // firmware/petalinux/build/builder-logs
 	LockPath   string // firmware/petalinux/build/.builder.lock
 
 	// Recipe paths
-	RecipeIncludePath string
+	RecipeIncludePath string // firmware/yocto/meta-plane-watcher/recipes-pwtools/plane-watcher-tools/plane-watcher-tools-binaries.inc
 	BuildTOMLPath     string
 	PlaneWatcherEnv   string
 	RawEnv            map[string]string
