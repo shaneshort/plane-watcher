@@ -105,8 +105,12 @@ if [[ "$SKIP_SDTGEN" != "1" ]]; then
   rm -rf "$SDT_DIR"
   mkdir -p "$SDT_DIR"
   (
+    # Vitis settings64.sh references PYTHONPATH and other env vars that may
+    # not be set in a clean shell; disable nounset around the source.
+    set +u
     # shellcheck disable=SC1091
     source "$VITIS_DIR/settings64.sh"
+    set -u
     xsct -eval "
       sdtgen set_dt_param -dir {$SDT_DIR} -xsa {$staged_xsa}
       sdtgen generate_sdt
@@ -132,8 +136,11 @@ if [[ -f "$MACHINE_CONF" && -f "$SDT_DIR/system-top.dts" ]]; then
         cd "$EDF_WORKSPACE"
         # shellcheck disable=SC1091
         set build
+        # edf-init-build-env references ZSH_NAME/etc; tolerate nounset.
+        set +u
         # shellcheck disable=SC1091
         . ./edf-init-build-env build >/dev/null
+        set -u
         gen-machine-conf \
           --hw-description "$SDT_DIR" \
           --soc-family zynq \
@@ -162,10 +169,12 @@ if [[ "$CLEANSSTATE_FSBL" == "1" ]]; then
   echo "==> bitbake -c cleansstate mc:$MACHINE-cortexa9-fsbl:fsbl-firmware"
   (
     cd "$EDF_WORKSPACE"
-    # shellcheck disable=SC1091
     set build
+    # edf-init-build-env references ZSH_NAME/etc; tolerate nounset.
+    set +u
     # shellcheck disable=SC1091
     . ./edf-init-build-env build >/dev/null
+    set -u
     if ! grep -q "$LAYER_DIR" "$EDF_BUILD_DIR/conf/bblayers.conf"; then
       bitbake-layers add-layer "$LAYER_DIR"
     fi
@@ -178,10 +187,12 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
   echo "==> bitbake $IMAGE (MACHINE=$MACHINE)"
   (
     cd "$EDF_WORKSPACE"
-    # shellcheck disable=SC1091
     set build
+    # edf-init-build-env references ZSH_NAME/etc; tolerate nounset.
+    set +u
     # shellcheck disable=SC1091
     . ./edf-init-build-env build >/dev/null
+    set -u
     # Ensure the layer is in bblayers. bitbake-layers add-layer is idempotent
     # in practice (it greps before appending), so unconditional invocation
     # is safe on rebuilds.
