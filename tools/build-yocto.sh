@@ -264,12 +264,26 @@ if [[ "$SKIP_STAGE" != "1" ]]; then
   done
 fi
 
+# Deliberately do not stage a uboot.env / uboot-redund.env: U-Boot's env is
+# board-owned state, not a build artefact. First-time SD prep: break into
+# U-Boot once and run `saveenv; saveenv` to capture the compiled defaults
+# into both redundant files; from then on env lives on the SD and is owned
+# by whoever is at the U-Boot prompt. Shipping an env blob from the build
+# would clobber that on every rebuild. The "No Valid Environment Area found"
+# warning on a fresh card is cosmetic — boot proceeds via compiled defaults.
+# Yocto still emits u-boot-xlnx-initial-env.bin under the EDF deploy dir if
+# anyone wants to seed a fresh SD from the compiled env.
+
 cat <<EOF
 
 Artefacts staged in: $DEPLOY_DIR
   BOOT.BIN  -> EDF-built FSBL + U-Boot + bitstream (Phase F flashes this to QSPI)
   image.ub  -> FIT: kernel + DTB + initrd; copy to FAT32 partition on SD
   boot.scr  -> EDF-built U-Boot boot script
+
+First SD prep: at the U-Boot prompt, run \`saveenv; saveenv\` to populate
+uboot.env + uboot-redund.env on the FAT partition. After that, U-Boot's
+env is board-owned state and untouched by future builds.
 
 Phase B's PetaLinux BOOT.BIN is still the QSPI baseline until Phase F.
 DIP switches: QSPI boot (S1=off, S2=on).
